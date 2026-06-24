@@ -1,4 +1,4 @@
-# draftforge
+# Draft Forge
 
 The technical proving ground for Cadence.
 
