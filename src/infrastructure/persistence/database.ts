@@ -1,15 +1,11 @@
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
+import { join, dirname } from 'path';
 import { homedir } from 'os';
-import { join } from 'path';
-import { mkdirSync, readFileSync, readdirSync, chmodSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, resolve } from 'path';
+import { mkdirSync, chmodSync } from 'fs';
 import { logger } from '../logging/logger.ts';
 import { sanitizePath } from '../logging/path-utils.ts';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { MIGRATION_001 } from './migrations/001_initial.ts';
 
 const DB_PATH = process.env.THOTH_DB_PATH ?? join(homedir(), '.thoth', 'thoth.db');
 
@@ -45,22 +41,20 @@ function runMigrations(db: Database.Database): void {
     "CREATE TABLE IF NOT EXISTS _migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT (datetime('now')))",
   );
 
-  const rows = db.prepare('SELECT name FROM _migrations').all() as Array<Record<string, unknown>>;
-  const applied = new Set(rows.map((r) => r.name as string));
+  const migrations: Array<{ name: string; sql: string }> = [{ name: '001_initial.sql', sql: MIGRATION_001 }];
 
-  const migrationsDir = resolve(__dirname, 'migrations');
-  const files = readdirSync(migrationsDir).sort();
+  for (const migration of migrations) {
+    const applied = db.prepare('SELECT 1 FROM _migrations WHERE name = ?').get(migration.name);
+    if (applied) continue;
 
-  for (const file of files) {
-    if (!file.endsWith('.sql')) continue;
-    if (applied.has(file)) continue;
+    const applyMigration = db.transaction(() => {
+      db.exec(migration.sql);
+      db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration.name);
+    });
 
-    const sql = readFileSync(join(migrationsDir, file), 'utf-8');
+    applyMigration();
 
-    db.exec(sql);
-    db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(file);
-
-    logger.info({ migration: file }, 'Applied migration');
+    logger.info({ migration: migration.name }, 'Applied migration');
   }
 }
 

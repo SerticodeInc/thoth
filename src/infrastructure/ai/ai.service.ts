@@ -16,10 +16,14 @@ function createClient(config: ProviderConfig): OpenAI {
   });
 }
 
-function timeoutSignal(ms: number): AbortSignal {
+async function withTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, ms: number): Promise<T> {
   const controller = new AbortController();
-  setTimeout(() => controller.abort(), ms);
-  return controller.signal;
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fn(controller.signal);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function chat(params: ChatParams): Promise<string> {
@@ -36,16 +40,20 @@ export async function chat(params: ChatParams): Promise<string> {
       logger.debug({ provider: provider.name }, 'Attempting chat completion');
 
       const client = createClient(provider);
-      const response = await client.chat.completions.create(
-        {
-          model: provider.chatModel,
-          messages: [
-            { role: 'system', content: params.systemPrompt },
-            { role: 'user', content: params.userPrompt },
-          ],
-          temperature: params.temperature ?? 0.7,
-        },
-        { signal: timeoutSignal(15_000) },
+      const response = await withTimeout(
+        (signal) =>
+          client.chat.completions.create(
+            {
+              model: provider.chatModel,
+              messages: [
+                { role: 'system', content: params.systemPrompt },
+                { role: 'user', content: params.userPrompt },
+              ],
+              temperature: params.temperature ?? 0.7,
+            },
+            { signal },
+          ),
+        15_000,
       );
 
       const content = response.choices[0]?.message?.content;
@@ -75,17 +83,22 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
   for (const provider of providers) {
     if (!provider.embeddingModel) continue;
+    const model = provider.embeddingModel;
 
     try {
       logger.debug({ provider: provider.name, textLength: text.length }, 'Attempting embedding');
 
       const client = createClient(provider);
-      const response = await client.embeddings.create(
-        {
-          model: provider.embeddingModel,
-          input: text,
-        },
-        { signal: timeoutSignal(15_000) },
+      const response = await withTimeout(
+        (signal) =>
+          client.embeddings.create(
+            {
+              model,
+              input: text,
+            },
+            { signal },
+          ),
+        15_000,
       );
 
       const embedding = response.data[0]?.embedding;

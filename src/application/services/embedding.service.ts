@@ -9,6 +9,7 @@ export interface Chunk {
 }
 
 export function chunkText(text: string, maxTokens = 512, overlap = 50): Chunk[] {
+  if (overlap >= maxTokens) overlap = maxTokens - 1;
   const tokens = enc.encode(text);
   const chunks: Chunk[] = [];
 

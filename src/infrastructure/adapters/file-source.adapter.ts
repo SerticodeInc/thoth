@@ -23,12 +23,17 @@ export async function importFromPath(
   return importFile(resolvedPath, type);
 }
 
-async function importFromDirectory(dirPath: string, type: SourceType): Promise<SourceReference[]> {
-  const entries = readdirSync(dirPath);
+async function importFromDirectory(dirPath: string, type: SourceType, visited?: Set<string>): Promise<SourceReference[]> {
+  const resolvedDir = realpathSync(dirPath);
+  if (!visited) visited = new Set<string>();
+  if (visited.has(resolvedDir)) return [];
+  visited.add(resolvedDir);
+
+  const entries = readdirSync(resolvedDir);
   const results: SourceReference[] = [];
 
   for (const entry of entries) {
-    const entryPath = join(dirPath, entry);
+    const entryPath = join(resolvedDir, entry);
     let resolvedPath: string;
     try {
       resolvedPath = realpathSync(entryPath);
@@ -39,7 +44,7 @@ async function importFromDirectory(dirPath: string, type: SourceType): Promise<S
     const stat = statSync(resolvedPath);
 
     if (stat.isDirectory()) {
-      const nested = await importFromDirectory(resolvedPath, type);
+      const nested = await importFromDirectory(resolvedPath, type, visited);
       results.push(...nested);
       continue;
     }

@@ -207,14 +207,13 @@ export class GenerateProfilesUseCase {
     text: string,
   ): Promise<void> {
     const embedding = await generateEmbedding(text);
-    this.db
+    const result = this.db
       .prepare('INSERT INTO vec_profiles (embedding) VALUES (?)')
       .run(new Float32Array(embedding));
-    const rowId = (this.db.prepare('SELECT last_insert_rowid() as id').get() as { id: number }).id;
     this.db
       .prepare(
         'INSERT INTO profile_embeddings (id, profile_id, profile_type, model) VALUES (?, ?, ?, ?)',
       )
-      .run(rowId, profileId, profileType, 'text-embedding-3-small');
+      .run(result.lastInsertRowid, profileId, profileType, 'text-embedding-3-small');
   }
 }
