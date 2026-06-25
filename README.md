@@ -1,4 +1,4 @@
-# Draft Forge
+# Thoth
 
 The technical proving ground for Cadence.
 
