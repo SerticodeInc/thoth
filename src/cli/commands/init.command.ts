@@ -48,13 +48,13 @@ export function registerInitCommand(program: Command): void {
         }
 
         console.log('Next steps:');
-        console.log('  thoth import voice <path>        Import voice sources');
-        console.log('  thoth import knowledge <path>    Import knowledge sources');
-        console.log('  thoth import publications <path> Import publication sources');
-        console.log('  thoth profile generate           Generate identity profiles');
-        console.log('  thoth research "<topic>"         Research a topic using your knowledge');
-        console.log('  thoth article generate --topic   Generate an article in your voice');
-        console.log('  thoth series create <name>       Group articles into series');
+        console.log('  thoth import_voice <path>         Import voice sources');
+        console.log('  thoth import_knowledge <path>     Import knowledge sources');
+        console.log('  thoth import_publications <path>  Import publication sources');
+        console.log('  thoth generate_profile            Generate identity profiles');
+        console.log('  thoth research "<topic>"          Research a topic using your knowledge');
+        console.log('  thoth generate_article --topic    Generate an article in your voice');
+        console.log('  thoth create_series <name>        Group articles into series');
 
         db.close();
       } catch (error) {

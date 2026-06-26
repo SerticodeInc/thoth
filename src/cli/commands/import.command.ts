@@ -1,33 +1,31 @@
 import type { Command } from 'commander';
-import { getDatabase } from '../../infrastructure/persistence/database.ts';
-import { logger } from '../../infrastructure/logging/logger.ts';
-import { SqliteSourceRepository } from '../../infrastructure/persistence/repositories/sqlite-source-repository.ts';
-import { FileSourceAdapter } from '../../infrastructure/adapters/file-source.adapter.ts';
 import { ImportSourcesUseCase } from '../../application/use-cases/import-sources.usecase.ts';
-import { OpenAiAiService } from '../../infrastructure/ai/ai.service.ts';
 import type { SourceType } from '../../domain/entities/source-reference.ts';
+import { FileSourceAdapter } from '../../infrastructure/adapters/file-source.adapter.ts';
+import { OpenAiAiService } from '../../infrastructure/ai/ai.service.ts';
+import { logger } from '../../infrastructure/logging/logger.ts';
+import { getDatabase } from '../../infrastructure/persistence/database.ts';
+import { SqliteSourceRepository } from '../../infrastructure/persistence/repositories/sqlite-source-repository.ts';
 
 export function registerImportCommand(program: Command): void {
-  const importCmd = program.command('import').description('Import sources for profile generation');
-
-  importCmd
-    .command('voice')
+  program
+    .command('import_voice')
     .description('Import voice sources (journals, essays, blog posts)')
     .argument('<path>', 'File or directory path')
     .action(async (sourcePath: string) => {
       await runImport(sourcePath, 'voice');
     });
 
-  importCmd
-    .command('knowledge')
+  program
+    .command('import_knowledge')
     .description('Import knowledge sources (technical notes, docs, repos)')
     .argument('<path>', 'File or directory path')
     .action(async (sourcePath: string) => {
       await runImport(sourcePath, 'knowledge');
     });
 
-  importCmd
-    .command('publications')
+  program
+    .command('import_publications')
     .description('Import publication sources (articles, series)')
     .argument('<path>', 'File or directory path')
     .action(async (sourcePath: string) => {
@@ -64,9 +62,12 @@ async function runImport(sourcePath: string, type: SourceType): Promise<void> {
     db.close();
 
     console.log();
-    console.log('Import complete. Run `thoth profile generate` to create identity profiles.');
+    console.log('Import complete. Run `thoth generate_profile` to create identity profiles.');
   } catch (error) {
-    logger.error({ error: error instanceof Error ? error.message : String(error), type }, 'Import failed');
+    logger.error(
+      { error: error instanceof Error ? error.message : String(error), type },
+      'Import failed',
+    );
     console.error('Import failed:', error instanceof Error ? error.message : error);
     process.exit(1);
   }

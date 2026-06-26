@@ -8,10 +8,8 @@ import { SqliteProfileRepository } from '../../infrastructure/persistence/reposi
 import { SqliteResearchRepository } from '../../infrastructure/persistence/repositories/sqlite-research-repository.ts';
 
 export function registerArticleCommand(program: Command): void {
-  const articleCmd = program.command('article').description('Manage articles');
-
-  articleCmd
-    .command('generate')
+  program
+    .command('generate_article')
     .description('Generate an article from research and voice profile')
     .option('-t, --topic <topic>', 'Topic to write about')
     .option('-r, --research <id>', 'Research note ID to use as source')
@@ -58,8 +56,8 @@ export function registerArticleCommand(program: Command): void {
       }
     });
 
-  articleCmd
-    .command('list')
+  program
+    .command('list_articles')
     .description('List generated articles')
     .action(async () => {
       try {
@@ -73,7 +71,7 @@ export function registerArticleCommand(program: Command): void {
         }
 
         if (result.value.length === 0) {
-          console.log('No articles generated yet. Run `thoth article generate --topic "<topic>"`');
+          console.log('No articles generated yet. Run `thoth generate_article --topic "<topic>"`');
           db.close();
           return;
         }
@@ -91,8 +89,8 @@ export function registerArticleCommand(program: Command): void {
       }
     });
 
-  articleCmd
-    .command('get')
+  program
+    .command('get_article')
     .description('Show an article by ID')
     .argument('<id>', 'Article ID')
     .action(async (id: string) => {

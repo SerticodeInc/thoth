@@ -7,10 +7,8 @@ import { SqliteProfileRepository } from '../../infrastructure/persistence/reposi
 import { SqliteSourceRepository } from '../../infrastructure/persistence/repositories/sqlite-source-repository.ts';
 
 export function registerProfileCommand(program: Command): void {
-  const profileCmd = program.command('profile').description('Manage identity profiles');
-
-  profileCmd
-    .command('generate')
+  program
+    .command('generate_profile')
     .description('Generate identity profiles from imported sources')
     .action(async () => {
       try {
@@ -31,7 +29,7 @@ export function registerProfileCommand(program: Command): void {
         };
 
         if (counts.voice === 0 && counts.knowledge === 0 && counts.publication === 0) {
-          console.error('No sources imported. Run `thoth import` first.');
+          console.error('No sources imported. Run `thoth import_voice` first.');
           process.exit(1);
         }
 
@@ -81,8 +79,8 @@ export function registerProfileCommand(program: Command): void {
       }
     });
 
-  profileCmd
-    .command('status')
+  program
+    .command('profile_status')
     .description('Show profile generation status')
     .action(() => {
       try {

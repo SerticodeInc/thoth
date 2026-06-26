@@ -5,10 +5,8 @@ import { SeriesUseCase } from '../../application/use-cases/series.usecase.ts';
 import { SqliteSeriesRepository } from '../../infrastructure/persistence/repositories/sqlite-series-repository.ts';
 
 export function registerSeriesCommand(program: Command): void {
-  const seriesCmd = program.command('series').description('Manage article series');
-
-  seriesCmd
-    .command('create')
+  program
+    .command('create_series')
     .description('Create a new series')
     .argument('<name>', 'Series name')
     .option('-d, --description <text>', 'Series description')
@@ -35,8 +33,8 @@ export function registerSeriesCommand(program: Command): void {
       }
     });
 
-  seriesCmd
-    .command('list')
+  program
+    .command('list_series')
     .description('List all series')
     .action(async () => {
       try {
@@ -51,7 +49,7 @@ export function registerSeriesCommand(program: Command): void {
         }
 
         if (result.value.length === 0) {
-          console.log('No series created yet. Run `thoth series create <name>`');
+          console.log('No series created yet. Run `thoth create_series <name>`');
           db.close();
           return;
         }
@@ -72,8 +70,8 @@ export function registerSeriesCommand(program: Command): void {
       }
     });
 
-  seriesCmd
-    .command('add')
+  program
+    .command('add_to_series')
     .description('Add an article to a series')
     .argument('<series-id>', 'Series ID')
     .argument('<article-id>', 'Article ID')
@@ -99,8 +97,8 @@ export function registerSeriesCommand(program: Command): void {
       }
     });
 
-  seriesCmd
-    .command('get')
+  program
+    .command('get_series')
     .description('Show series details')
     .argument('<id>', 'Series ID')
     .action(async (id: string) => {

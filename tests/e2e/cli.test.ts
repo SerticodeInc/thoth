@@ -19,13 +19,13 @@ describe('CLI e2e', () => {
     const output = execSync(`${CLI} --help`, { encoding: 'utf-8' });
     expect(output).toContain('thoth');
     expect(output).toContain('init');
-    expect(output).toContain('import');
-    expect(output).toContain('profile');
+    expect(output).toContain('import_voice');
+    expect(output).toContain('profile_status');
   });
 
   it('shows version', () => {
     const output = execSync(`${CLI} --version`, { encoding: 'utf-8' });
-    expect(output).toContain('0.1.0');
+    expect(output).toContain('1.0.0');
   });
 
   it('runs init successfully', () => {
@@ -35,12 +35,12 @@ describe('CLI e2e', () => {
   });
 
   it('shows profile status after init', () => {
-    const output = execSync(`${CLI} profile status`, { encoding: 'utf-8' });
+    const output = execSync(`${CLI} profile_status`, { encoding: 'utf-8' });
     expect(output).toContain('❌ Not generated');
   });
 
   it('imports a voice file', () => {
-    const output = execSync(`${CLI} import voice tests/fixtures/sample-journal.md`, {
+    const output = execSync(`${CLI} import_voice tests/fixtures/sample-journal.md`, {
       encoding: 'utf-8',
     });
     expect(output).toContain('Import complete');

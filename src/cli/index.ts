@@ -12,7 +12,7 @@ export function createCli(): Command {
   program
     .name('thoth')
     .description('Identity-Preserving Publishing Engine')
-    .version('0.1.0')
+    .version('1.0.0')
     .option('--local', 'Use only local AI (Ollama). No data sent to external providers');
 
   program.hook('preAction', (thisCommand) => {

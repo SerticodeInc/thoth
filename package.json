@@ -1,14 +1,17 @@
 {
   "name": "thoth",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Identity-Preserving Publishing Engine",
   "type": "module",
   "bin": {
     "thoth": "./dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc",
+    "build": "tsup src/index.ts --clean --out-dir dist --format esm --external better-sqlite3 --external sqlite-vec --external pino",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -34,6 +37,7 @@
     "eslint": "^9.18.0",
     "globals": "^15.14.0",
     "prettier": "^3.4.0",
+    "tsup": "^8.5.1",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.20.0",
