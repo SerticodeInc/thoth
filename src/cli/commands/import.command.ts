@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import cliProgress from 'cli-progress';
 import { ImportSourcesUseCase } from '../../application/use-cases/import-sources.usecase.ts';
 import type { SourceType } from '../../domain/entities/source-reference.ts';
 import { FileSourceAdapter } from '../../infrastructure/adapters/file-source.adapter.ts';
@@ -47,11 +48,23 @@ async function runImport(sourcePath: string, type: SourceType): Promise<void> {
 
     console.log(`  Imported ${count} chunks.`);
 
+    const embedBar = new cliProgress.SingleBar({
+      format: '  Embedding: [{bar}] {percentage}% | {value}/{total} chunks | {duration_formatted}',
+      barCompleteChar: '\u2588',
+      barIncompleteChar: '\u2591',
+      hideCursor: true,
+    });
+
     console.log('  Generating embeddings...');
     try {
-      await useCase.generateEmbeddingsForType(type);
+      embedBar.start(count, 0);
+      await useCase.generateEmbeddingsForType(type, (current) => {
+        embedBar.update(current);
+      });
+      embedBar.stop();
       console.log('  Embeddings complete.');
     } catch (error) {
+      embedBar.stop();
       console.warn(
         '  Warning: Embedding generation failed. You can retry by running import again.',
       );

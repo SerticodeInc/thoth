@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import { getChatProviders, getEmbeddingProviders } from './provider.ts';
 import type { ProviderConfig } from './provider.ts';
 import type { AiService, ChatParams } from '../../domain/repositories/ai-service.ts';
@@ -23,7 +24,53 @@ async function withTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, ms: numbe
 }
 
 function buildProviderListError(operation: string): string {
-  return `No AI provider available for ${operation}. Set OPENAI_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, or start Ollama on localhost:11434.`;
+  return `No AI provider available for ${operation}. Set OPENAI_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, ANTHROPIC_API_KEY, or start Ollama on localhost:11434.`;
+}
+
+async function chatWithOpenAiCompatible(
+  config: ProviderConfig,
+  params: ChatParams,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const client = createClient(config);
+  const response = await client.chat.completions.create(
+    {
+      model: config.chatModel,
+      messages: [
+        { role: 'system', content: params.systemPrompt },
+        { role: 'user', content: params.userPrompt },
+      ],
+      temperature: params.temperature ?? 0.7,
+    },
+    { signal },
+  );
+  return response.choices[0]?.message?.content ?? null;
+}
+
+async function chatWithAnthropic(
+  config: ProviderConfig,
+  params: ChatParams,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const anthropic = new Anthropic({
+    apiKey: config.apiKey,
+  });
+
+  const response = await anthropic.messages.create(
+    {
+      model: config.chatModel,
+      system: params.systemPrompt,
+      messages: [{ role: 'user', content: params.userPrompt }],
+      max_tokens: 4096,
+      temperature: params.temperature ?? 0.7,
+    },
+    { signal },
+  );
+
+  const contentBlock = response.content.find((block): block is Anthropic.TextBlock => block.type === 'text');
+  const content = contentBlock?.text ?? null;
+
+  return content || null;
 }
 
 export class OpenAiAiService implements AiService {
@@ -34,37 +81,40 @@ export class OpenAiAiService implements AiService {
       return { ok: false, error: buildProviderListError('chat') };
     }
 
+    const MAX_RETRIES = 3;
+
     for (const provider of providers) {
-      try {
-        logger.debug({ provider: provider.name }, 'Attempting chat completion');
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          logger.debug({ provider: provider.name, attempt }, 'Attempting chat completion');
 
-        const client = createClient(provider);
-        const response = await withTimeout(
-          (signal) =>
-            client.chat.completions.create(
-              {
-                model: provider.chatModel,
-                messages: [
-                  { role: 'system', content: params.systemPrompt },
-                  { role: 'user', content: params.userPrompt },
-                ],
-                temperature: params.temperature ?? 0.7,
-              },
-              { signal },
-            ),
-          15_000,
-        );
+          const content = await withTimeout(async (signal) => {
+            if (provider.kind === 'anthropic') {
+              return chatWithAnthropic(provider, params, signal);
+            }
+            return chatWithOpenAiCompatible(provider, params, signal);
+          }, 30_000);
 
-        const content = response.choices[0]?.message?.content;
-        if (content) {
-          logger.info({ provider: provider.name }, 'Chat completed');
-          return { ok: true, value: content };
+          if (content) {
+            logger.info({ provider: provider.name }, 'Chat completed');
+            return { ok: true, value: content };
+          }
+        } catch (error) {
+          const isLastAttempt = attempt === MAX_RETRIES;
+          logger.warn(
+            {
+              provider: provider.name,
+              attempt,
+              error: error instanceof Error ? error.message : error,
+            },
+            isLastAttempt ? 'Provider failed, trying next' : 'Retrying...',
+          );
+
+          if (!isLastAttempt) {
+            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
         }
-      } catch (error) {
-        logger.warn(
-          { provider: provider.name, error: error instanceof Error ? error.message : error },
-          'Provider failed, trying next',
-        );
       }
     }
 
@@ -78,36 +128,50 @@ export class OpenAiAiService implements AiService {
       return { ok: false, error: buildProviderListError('embeddings') };
     }
 
+    const MAX_RETRIES = 3;
+
     for (const provider of providers) {
       if (!provider.embeddingModel) continue;
       const model = provider.embeddingModel;
 
-      try {
-        logger.debug({ provider: provider.name, textLength: text.length }, 'Attempting embedding');
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          logger.debug({ provider: provider.name, attempt, textLength: text.length }, 'Attempting embedding');
 
-        const client = createClient(provider);
-        const response = await withTimeout(
-          (signal) =>
-            client.embeddings.create(
-              {
-                model,
-                input: text,
-              },
-              { signal },
-            ),
-          15_000,
-        );
+          const client = createClient(provider);
+          const response = await withTimeout(
+            (signal) =>
+              client.embeddings.create(
+                {
+                  model,
+                  input: text,
+                },
+                { signal },
+              ),
+            15_000,
+          );
 
-        const embedding = response.data[0]?.embedding;
-        if (embedding) {
-          logger.info({ provider: provider.name }, 'Embedding generated');
-          return { ok: true, value: embedding };
+          const embedding = response.data[0]?.embedding;
+          if (embedding) {
+            logger.info({ provider: provider.name }, 'Embedding generated');
+            return { ok: true, value: embedding };
+          }
+        } catch (error) {
+          const isLastAttempt = attempt === MAX_RETRIES;
+          logger.warn(
+            {
+              provider: provider.name,
+              attempt,
+              error: error instanceof Error ? error.message : error,
+            },
+            isLastAttempt ? 'Provider failed, trying next' : 'Retrying...',
+          );
+
+          if (!isLastAttempt) {
+            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
         }
-      } catch (error) {
-        logger.warn(
-          { provider: provider.name, error: error instanceof Error ? error.message : error },
-          'Provider failed, trying next',
-        );
       }
     }
 

@@ -47,6 +47,28 @@ export class SqliteSourceRepository implements SourceRepository {
     return { ok: true, value: results };
   }
 
+  isAlreadyImported(sourcePath: string, checksum: string): Result<boolean> {
+    try {
+      const row = this.db
+        .prepare('SELECT 1 FROM import_log WHERE source_path = ? AND checksum = ?')
+        .get(sourcePath, checksum);
+      return { ok: true, value: !!row };
+    } catch {
+      return { ok: true, value: false };
+    }
+  }
+
+  logImport(sourcePath: string, checksum: string, type: SourceType): Result<void> {
+    try {
+      this.db
+        .prepare('INSERT OR IGNORE INTO import_log (source_path, checksum, type) VALUES (?, ?, ?)')
+        .run(sourcePath, checksum, type);
+    } catch {
+      // table may not exist on first run — non-critical
+    }
+    return { ok: true, value: undefined };
+  }
+
   saveSourceEmbedding(sourceId: string, embedding: number[], model: string): Result<void> {
     const insertVec = this.db.prepare('INSERT INTO vec_sources (embedding) VALUES (?)');
     const insertEmb = this.db.prepare(

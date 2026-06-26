@@ -9,27 +9,37 @@ import { MIGRATION_001 } from './migrations/001_initial.ts';
 import { MIGRATION_002 } from './migrations/002_research.ts';
 import { MIGRATION_003 } from './migrations/003_articles.ts';
 import { MIGRATION_004 } from './migrations/004_series.ts';
-
-const DB_PATH = process.env.THOTH_DB_PATH ?? join(homedir(), '.thoth', 'thoth.db');
+import { MIGRATION_005 } from './migrations/005_import_log.ts';
 
 let db: Database.Database | null = null;
+let cachedDbPath: string | null = null;
+
+export function setDbPath(path: string) {
+  cachedDbPath = path;
+}
+
+function resolveDbPath(): string {
+  if (cachedDbPath) return cachedDbPath;
+  return process.env.THOTH_DB_PATH ?? join(homedir(), '.thoth', 'thoth.db');
+}
 
 export function getDatabase(): Database.Database {
   if (db) return db;
 
-  const dbDir = dirname(DB_PATH);
+  const dbPath = resolveDbPath();
+  const dbDir = dirname(dbPath);
   mkdirSync(dbDir, { recursive: true });
 
-  logger.info({ path: sanitizePath(DB_PATH) }, 'Opening database');
+  logger.info({ path: sanitizePath(dbPath) }, 'Opening database');
 
-  db = new Database(DB_PATH);
+  db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
   try {
-    chmodSync(DB_PATH, 0o600);
+    chmodSync(dbPath, 0o600);
   } catch {
-    logger.warn({ path: sanitizePath(DB_PATH) }, 'Could not set database file permissions');
+    logger.warn({ path: sanitizePath(dbPath) }, 'Could not set database file permissions');
   }
 
   sqliteVec.load(db);
@@ -49,6 +59,7 @@ function runMigrations(db: Database.Database): void {
     { name: '002_research.sql', sql: MIGRATION_002 },
     { name: '003_articles.sql', sql: MIGRATION_003 },
     { name: '004_series.sql', sql: MIGRATION_004 },
+    { name: '005_import_log.sql', sql: MIGRATION_005 },
   ];
 
   for (const migration of migrations) {
