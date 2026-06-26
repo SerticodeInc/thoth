@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { getDatabase } from '../../infrastructure/persistence/database.ts';
 import { logger } from '../../infrastructure/logging/logger.ts';
-import { getSourceCountByType } from '../../infrastructure/persistence/repositories/source-repository.ts';
+import { SqliteSourceRepository } from '../../infrastructure/persistence/repositories/sqlite-source-repository.ts';
 
 export function registerInitCommand(program: Command): void {
   program
@@ -12,11 +12,16 @@ export function registerInitCommand(program: Command): void {
         logger.info('Initializing Thoth');
 
         const db = getDatabase();
+        const sourceRepo = new SqliteSourceRepository(db);
+
+        const voiceCount = sourceRepo.getSourceCountByType('voice');
+        const knowledgeCount = sourceRepo.getSourceCountByType('knowledge');
+        const pubCount = sourceRepo.getSourceCountByType('publication');
 
         const counts = {
-          voice: getSourceCountByType(db, 'voice'),
-          knowledge: getSourceCountByType(db, 'knowledge'),
-          publication: getSourceCountByType(db, 'publication'),
+          voice: voiceCount.ok ? voiceCount.value : 0,
+          knowledge: knowledgeCount.ok ? knowledgeCount.value : 0,
+          publication: pubCount.ok ? pubCount.value : 0,
         };
 
         logger.info(
@@ -47,10 +52,13 @@ export function registerInitCommand(program: Command): void {
         console.log('  thoth import knowledge <path>    Import knowledge sources');
         console.log('  thoth import publications <path> Import publication sources');
         console.log('  thoth profile generate           Generate identity profiles');
+        console.log('  thoth research "<topic>"         Research a topic using your knowledge');
+        console.log('  thoth article generate --topic   Generate an article in your voice');
+        console.log('  thoth series create <name>       Group articles into series');
 
         db.close();
       } catch (error) {
-        logger.error({ error }, 'Init failed');
+        logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Init failed');
         console.error('Init failed:', error instanceof Error ? error.message : error);
         process.exit(1);
       }

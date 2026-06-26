@@ -1,4 +1,4 @@
-import { homedir } from 'os';
+import { homedir } from 'node:os';
 
 const HOME_DIR = homedir();
 

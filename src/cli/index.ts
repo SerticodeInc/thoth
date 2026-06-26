@@ -2,6 +2,9 @@ import { Command } from 'commander';
 import { registerInitCommand } from './commands/init.command.ts';
 import { registerImportCommand } from './commands/import.command.ts';
 import { registerProfileCommand } from './commands/profile.command.ts';
+import { registerResearchCommand } from './commands/research.command.ts';
+import { registerArticleCommand } from './commands/article.command.ts';
+import { registerSeriesCommand } from './commands/series.command.ts';
 
 export function createCli(): Command {
   const program = new Command();
@@ -22,6 +25,9 @@ export function createCli(): Command {
   registerInitCommand(program);
   registerImportCommand(program);
   registerProfileCommand(program);
+  registerResearchCommand(program);
+  registerArticleCommand(program);
+  registerSeriesCommand(program);
 
   return program;
 }

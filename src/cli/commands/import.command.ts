@@ -1,8 +1,10 @@
 import type { Command } from 'commander';
 import { getDatabase } from '../../infrastructure/persistence/database.ts';
 import { logger } from '../../infrastructure/logging/logger.ts';
-import { sanitizePath } from '../../infrastructure/logging/path-utils.ts';
+import { SqliteSourceRepository } from '../../infrastructure/persistence/repositories/sqlite-source-repository.ts';
+import { FileSourceAdapter } from '../../infrastructure/adapters/file-source.adapter.ts';
 import { ImportSourcesUseCase } from '../../application/use-cases/import-sources.usecase.ts';
+import { OpenAiAiService } from '../../infrastructure/ai/ai.service.ts';
 import type { SourceType } from '../../domain/entities/source-reference.ts';
 
 export function registerImportCommand(program: Command): void {
@@ -36,13 +38,16 @@ export function registerImportCommand(program: Command): void {
 async function runImport(sourcePath: string, type: SourceType): Promise<void> {
   try {
     const db = getDatabase();
-    const useCase = new ImportSourcesUseCase(db);
+    const ai = new OpenAiAiService();
+    const sourceRepo = new SqliteSourceRepository(db);
+    const fileSource = new FileSourceAdapter();
+    const useCase = new ImportSourcesUseCase(sourceRepo, fileSource, ai, logger);
 
     console.log(`Importing ${type} sources from: ${sourcePath}`);
 
-    const sources = await useCase.execute(sourcePath, type);
+    const count = await useCase.execute(sourcePath, type);
 
-    console.log(`  Imported ${sources.length} chunks.`);
+    console.log(`  Imported ${count} chunks.`);
 
     console.log('  Generating embeddings...');
     try {
@@ -61,7 +66,7 @@ async function runImport(sourcePath: string, type: SourceType): Promise<void> {
     console.log();
     console.log('Import complete. Run `thoth profile generate` to create identity profiles.');
   } catch (error) {
-    logger.error({ error, type, path: sanitizePath(sourcePath) }, 'Import failed');
+    logger.error({ error: error instanceof Error ? error.message : String(error), type }, 'Import failed');
     console.error('Import failed:', error instanceof Error ? error.message : error);
     process.exit(1);
   }

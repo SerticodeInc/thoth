@@ -1,11 +1,14 @@
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
-import { join, dirname } from 'path';
-import { homedir } from 'os';
-import { mkdirSync, chmodSync } from 'fs';
+import { join, dirname } from 'node:path';
+import { homedir } from 'node:os';
+import { mkdirSync, chmodSync } from 'node:fs';
 import { logger } from '../logging/logger.ts';
 import { sanitizePath } from '../logging/path-utils.ts';
 import { MIGRATION_001 } from './migrations/001_initial.ts';
+import { MIGRATION_002 } from './migrations/002_research.ts';
+import { MIGRATION_003 } from './migrations/003_articles.ts';
+import { MIGRATION_004 } from './migrations/004_series.ts';
 
 const DB_PATH = process.env.THOTH_DB_PATH ?? join(homedir(), '.thoth', 'thoth.db');
 
@@ -41,7 +44,12 @@ function runMigrations(db: Database.Database): void {
     "CREATE TABLE IF NOT EXISTS _migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT (datetime('now')))",
   );
 
-  const migrations: Array<{ name: string; sql: string }> = [{ name: '001_initial.sql', sql: MIGRATION_001 }];
+  const migrations: Array<{ name: string; sql: string }> = [
+    { name: '001_initial.sql', sql: MIGRATION_001 },
+    { name: '002_research.sql', sql: MIGRATION_002 },
+    { name: '003_articles.sql', sql: MIGRATION_003 },
+    { name: '004_series.sql', sql: MIGRATION_004 },
+  ];
 
   for (const migration of migrations) {
     const applied = db.prepare('SELECT 1 FROM _migrations WHERE name = ?').get(migration.name);

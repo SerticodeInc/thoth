@@ -1,35 +1,85 @@
 import type Database from 'better-sqlite3';
-import type { VoiceProfile, VoiceTraits } from '../../../domain/entities/voice-profile.ts';
+import type { VoiceProfile } from '../../../domain/entities/voice-profile.ts';
 import type { KnowledgeProfile } from '../../../domain/entities/knowledge-profile.ts';
-import type {
-  PublicationProfile,
-  SeriesReference,
-} from '../../../domain/entities/publication-profile.ts';
+import type { PublicationProfile } from '../../../domain/entities/publication-profile.ts';
 import type {
   ProfileRepository,
   ProfileType,
-  ProfileEntity,
-  ScoredProfile,
 } from '../../../domain/repositories/profile-repository.ts';
+import type { Result } from '../../../domain/entities/result.ts';
+import {
+  voiceProfileRowSchema,
+  knowledgeProfileRowSchema,
+  publicationProfileRowSchema,
+} from './profile-schemas.ts';
 
-function parseTraits(json: string): VoiceTraits {
-  const raw = JSON.parse(json) as Record<string, string[]>;
-  return {
-    tone: raw.tone ?? [],
-    pacing: raw.pacing ?? [],
-    storytelling: raw.storytelling ?? [],
-    vocabulary: raw.vocabulary ?? [],
-    sentenceStructure: raw.sentenceStructure ?? [],
-    transitions: raw.transitions ?? [],
-    humor: raw.humor ?? [],
-    readerEngagement: raw.readerEngagement ?? [],
-  };
+function parseRow(
+  schema: { parse: (row: unknown) => unknown },
+  row: Record<string, unknown>,
+  label: string,
+): Result<unknown> {
+  try {
+    return { ok: true, value: schema.parse(row) };
+  } catch (error) {
+    return { ok: false, error: `Invalid ${label} row: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }
 
 export class SqliteProfileRepository implements ProfileRepository {
   constructor(private readonly db: Database.Database) {}
 
-  saveVoiceProfile(profile: VoiceProfile): Promise<VoiceProfile> {
+  saveVoiceProfile(profile: VoiceProfile): Promise<Result<VoiceProfile>> {
+    return Promise.resolve(this.saveVoiceProfileSync(profile));
+  }
+
+  getVoiceProfile(id: string): Promise<Result<VoiceProfile | null>> {
+    return Promise.resolve(this.getProfileByTypeAndId('voice', id) as Result<VoiceProfile | null>);
+  }
+
+  getLatestVoiceProfile(): Promise<Result<VoiceProfile | null>> {
+    return Promise.resolve(this.getLatestProfileByType('voice') as Result<VoiceProfile | null>);
+  }
+
+  saveKnowledgeProfile(profile: KnowledgeProfile): Promise<Result<KnowledgeProfile>> {
+    return Promise.resolve(this.saveKnowledgeProfileSync(profile));
+  }
+
+  getKnowledgeProfile(id: string): Promise<Result<KnowledgeProfile | null>> {
+    return Promise.resolve(this.getProfileByTypeAndId('knowledge', id) as Result<KnowledgeProfile | null>);
+  }
+
+  getLatestKnowledgeProfile(): Promise<Result<KnowledgeProfile | null>> {
+    return Promise.resolve(this.getLatestProfileByType('knowledge') as Result<KnowledgeProfile | null>);
+  }
+
+  savePublicationProfile(profile: PublicationProfile): Promise<Result<PublicationProfile>> {
+    return Promise.resolve(this.savePublicationProfileSync(profile));
+  }
+
+  getPublicationProfile(id: string): Promise<Result<PublicationProfile | null>> {
+    return Promise.resolve(this.getProfileByTypeAndId('publication', id) as Result<PublicationProfile | null>);
+  }
+
+  getLatestPublicationProfile(): Promise<Result<PublicationProfile | null>> {
+    return Promise.resolve(this.getLatestProfileByType('publication') as Result<PublicationProfile | null>);
+  }
+
+  saveProfileEmbedding(profileId: string, type: ProfileType, embedding: number[]): Promise<Result<void>> {
+    const insertEmb = this.db.prepare(
+      'INSERT INTO profile_embeddings (profile_id, profile_type, model) VALUES (?, ?, ?)',
+    );
+    const insertVec = this.db.prepare('INSERT INTO vec_profiles (embedding) VALUES (?)');
+
+    const doInsert = this.db.transaction(() => {
+      insertVec.run(new Float32Array(embedding));
+      insertEmb.run(profileId, type, 'text-embedding-3-small');
+    });
+
+    doInsert();
+    return Promise.resolve({ ok: true, value: undefined });
+  }
+
+  private saveVoiceProfileSync(profile: VoiceProfile): Result<VoiceProfile> {
     this.db
       .prepare(
         `INSERT INTO voice_profiles (id, name, traits, summary, created_at)
@@ -46,26 +96,10 @@ export class SqliteProfileRepository implements ProfileRepository {
         profile.summary,
         profile.createdAt.toISOString(),
       );
-    return Promise.resolve(profile);
+    return { ok: true, value: profile };
   }
 
-  getVoiceProfile(id: string): Promise<VoiceProfile | null> {
-    const row = this.db.prepare('SELECT * FROM voice_profiles WHERE id = ?').get(id) as
-      | Record<string, unknown>
-      | undefined;
-    if (!row) return Promise.resolve(null);
-    return Promise.resolve(this.mapVoiceRow(row));
-  }
-
-  getLatestVoiceProfile(): Promise<VoiceProfile | null> {
-    const row = this.db
-      .prepare('SELECT * FROM voice_profiles ORDER BY created_at DESC LIMIT 1')
-      .get() as Record<string, unknown> | undefined;
-    if (!row) return Promise.resolve(null);
-    return Promise.resolve(this.mapVoiceRow(row));
-  }
-
-  saveKnowledgeProfile(profile: KnowledgeProfile): Promise<KnowledgeProfile> {
+  private saveKnowledgeProfileSync(profile: KnowledgeProfile): Result<KnowledgeProfile> {
     this.db
       .prepare(
         `INSERT INTO knowledge_profiles (id, domains, topics, summary, created_at)
@@ -82,26 +116,10 @@ export class SqliteProfileRepository implements ProfileRepository {
         profile.summary,
         profile.createdAt.toISOString(),
       );
-    return Promise.resolve(profile);
+    return { ok: true, value: profile };
   }
 
-  getKnowledgeProfile(id: string): Promise<KnowledgeProfile | null> {
-    const row = this.db.prepare('SELECT * FROM knowledge_profiles WHERE id = ?').get(id) as
-      | Record<string, unknown>
-      | undefined;
-    if (!row) return Promise.resolve(null);
-    return Promise.resolve(this.mapKnowledgeRow(row));
-  }
-
-  getLatestKnowledgeProfile(): Promise<KnowledgeProfile | null> {
-    const row = this.db
-      .prepare('SELECT * FROM knowledge_profiles ORDER BY created_at DESC LIMIT 1')
-      .get() as Record<string, unknown> | undefined;
-    if (!row) return Promise.resolve(null);
-    return Promise.resolve(this.mapKnowledgeRow(row));
-  }
-
-  savePublicationProfile(profile: PublicationProfile): Promise<PublicationProfile> {
+  private savePublicationProfileSync(profile: PublicationProfile): Result<PublicationProfile> {
     this.db
       .prepare(
         `INSERT INTO publication_profiles (id, themes, series, summary, created_at)
@@ -118,96 +136,44 @@ export class SqliteProfileRepository implements ProfileRepository {
         profile.summary,
         profile.createdAt.toISOString(),
       );
-    return Promise.resolve(profile);
+    return { ok: true, value: profile };
   }
 
-  getPublicationProfile(id: string): Promise<PublicationProfile | null> {
-    const row = this.db.prepare('SELECT * FROM publication_profiles WHERE id = ?').get(id) as
+  private getProfileByTypeAndId(type: ProfileType, id: string): Result<unknown> {
+    const table = this.tableForType(type);
+    const row = this.db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id) as
       | Record<string, unknown>
       | undefined;
-    if (!row) return Promise.resolve(null);
-    return Promise.resolve(this.mapPublicationRow(row));
+    if (!row) return { ok: true, value: null };
+
+    const schema = this.schemaForType(type);
+    return parseRow(schema, row, `${type} profile`);
   }
 
-  getLatestPublicationProfile(): Promise<PublicationProfile | null> {
+  private getLatestProfileByType(type: ProfileType): Result<unknown> {
+    const table = this.tableForType(type);
     const row = this.db
-      .prepare('SELECT * FROM publication_profiles ORDER BY created_at DESC LIMIT 1')
+      .prepare(`SELECT * FROM ${table} ORDER BY created_at DESC LIMIT 1`)
       .get() as Record<string, unknown> | undefined;
-    if (!row) return Promise.resolve(null);
-    return Promise.resolve(this.mapPublicationRow(row));
+    if (!row) return { ok: true, value: null };
+
+    const schema = this.schemaForType(type);
+    return parseRow(schema, row, `${type} profile`);
   }
 
-  async searchSimilarProfiles(
-    embedding: number[],
-    type: ProfileType,
-    limit = 5,
-  ): Promise<ScoredProfile[]> {
-    const vecTable = 'vec_profiles';
-    const embTable = 'profile_embeddings';
-
-    const rows = this.db
-      .prepare(
-        `SELECT v.rowid, e.profile_id, e.profile_type, v.distance
-         FROM ${vecTable} v
-         JOIN ${embTable} e ON v.rowid = e.id
-         WHERE e.profile_type = ? AND v.embedding MATCH ? AND k = ?
-         ORDER BY v.distance`,
-      )
-      .all(type, new Float32Array(embedding), limit) as Array<{
-      rowid: number;
-      profile_id: string;
-      profile_type: string;
-      distance: number;
-    }>;
-
-    const results: ScoredProfile[] = [];
-    for (const row of rows) {
-      const profile = await this.getProfileById(row.profile_id, row.profile_type as ProfileType);
-      if (profile) {
-        results.push({ profile, distance: row.distance });
-      }
-    }
-    return results;
-  }
-
-  private async getProfileById(id: string, type: ProfileType): Promise<ProfileEntity | null> {
+  private tableForType(type: ProfileType): string {
     switch (type) {
-      case 'voice':
-        return this.getVoiceProfile(id);
-      case 'knowledge':
-        return this.getKnowledgeProfile(id);
-      case 'publication':
-        return this.getPublicationProfile(id);
+      case 'voice': return 'voice_profiles';
+      case 'knowledge': return 'knowledge_profiles';
+      case 'publication': return 'publication_profiles';
     }
   }
 
-  private mapVoiceRow(row: Record<string, unknown>): VoiceProfile {
-    return {
-      id: row.id as string,
-      name: (row.name as string) ?? null,
-      traits: parseTraits(row.traits as string),
-      summary: (row.summary as string) ?? null,
-      createdAt: new Date(row.created_at as string),
-    };
-  }
-
-  private mapKnowledgeRow(row: Record<string, unknown>): KnowledgeProfile {
-    return {
-      id: row.id as string,
-      domains: JSON.parse(row.domains as string) as string[],
-      topics: JSON.parse(row.topics as string) as string[],
-      summary: (row.summary as string) ?? null,
-      createdAt: new Date(row.created_at as string),
-    };
-  }
-
-  private mapPublicationRow(row: Record<string, unknown>): PublicationProfile {
-    return {
-      id: row.id as string,
-      themes: JSON.parse(row.themes as string) as string[],
-      series: row.series ? (JSON.parse(row.series as string) as SeriesReference[]) : null,
-      summary: (row.summary as string) ?? null,
-      createdAt: new Date(row.created_at as string),
-    };
+  private schemaForType(type: ProfileType) {
+    switch (type) {
+      case 'voice': return voiceProfileRowSchema;
+      case 'knowledge': return knowledgeProfileRowSchema;
+      case 'publication': return publicationProfileRowSchema;
+    }
   }
 }

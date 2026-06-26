@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../src/infrastructure/ai/ai.service.ts', () => ({
-  generateEmbedding: vi.fn().mockResolvedValue(new Array(1536).fill(0.1)),
-  chat: vi.fn().mockImplementation(async (params: { systemPrompt: string }) => {
-    if (params.systemPrompt.includes('Voice Profile')) {
-      return JSON.stringify({
+  OpenAiAiService: vi.fn().mockImplementation(() => ({
+    generateEmbedding: vi.fn().mockResolvedValue({ ok: true, value: new Array(1536).fill(0.1) }),
+    chat: vi.fn().mockImplementation(async (_params: { systemPrompt: string }) => {
+      return { ok: true, value: JSON.stringify({
         traits: {
           tone: ['conversational'],
           pacing: ['varied'],
@@ -16,33 +16,27 @@ vi.mock('../../src/infrastructure/ai/ai.service.ts', () => ({
           readerEngagement: ['questions'],
         },
         summary: 'Test voice summary',
-      });
-    }
-    if (params.systemPrompt.includes('Knowledge Profile')) {
-      return JSON.stringify({
         domains: ['Mobile Development', 'Flutter'],
         topics: ['State Management', 'Riverpod', 'Clean Architecture'],
-        summary: 'Expert in Flutter architecture',
-      });
-    }
-    if (params.systemPrompt.includes('Publication Profile')) {
-      return JSON.stringify({
         themes: ['Offline First', 'State Management'],
-        summary: 'Focuses on practical architecture',
-      });
-    }
-    return JSON.stringify({});
-  }),
+      }) };
+    }),
+  })),
 }));
 
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 import { ImportSourcesUseCase } from '../../src/application/use-cases/import-sources.usecase.ts';
 import { GenerateProfilesUseCase } from '../../src/application/use-cases/generate-profiles.usecase.ts';
-import { readFileSync, writeFileSync, mkdirSync, realpathSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
-import { randomUUID } from 'crypto';
+import { SqliteProfileRepository } from '../../src/infrastructure/persistence/repositories/sqlite-profile-repository.ts';
+import { SqliteSourceRepository } from '../../src/infrastructure/persistence/repositories/sqlite-source-repository.ts';
+import { FileSourceAdapter } from '../../src/infrastructure/adapters/file-source.adapter.ts';
+import { OpenAiAiService } from '../../src/infrastructure/ai/ai.service.ts';
+import { logger } from '../../src/infrastructure/logging/logger.ts';
+import { readFileSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 
 function createTestDb(): Database.Database {
   const db = new Database(':memory:');
@@ -74,37 +68,50 @@ describe('ImportSourcesUseCase', () => {
   });
 
   it('imports a file and stores chunks', async () => {
-    const useCase = new ImportSourcesUseCase(db);
+    const ai = new OpenAiAiService();
+    const sourceRepo = new SqliteSourceRepository(db);
+    const fileSource = new FileSourceAdapter();
+    const useCase = new ImportSourcesUseCase(sourceRepo, fileSource, ai, logger);
     const filePath = createTestFile('# My Journal\n\nTest content here.');
 
-    const sources = await useCase.execute(filePath, 'voice');
+    const count = await useCase.execute(filePath, 'voice');
 
-    expect(sources.length).toBeGreaterThanOrEqual(1);
-    expect(sources[0].type).toBe('voice');
-    expect(sources[0].sourcePath).toBe(realpathSync(filePath));
+    expect(count).toBeGreaterThanOrEqual(1);
   });
 
   it('assigns correct source type', async () => {
-    const useCase = new ImportSourcesUseCase(db);
+    const ai = new OpenAiAiService();
+    const sourceRepo = new SqliteSourceRepository(db);
+    const fileSource = new FileSourceAdapter();
+    const useCase = new ImportSourcesUseCase(sourceRepo, fileSource, ai, logger);
     const filePath = createTestFile('# Tech Notes\n\nFlutter architecture notes.');
 
-    const sources = await useCase.execute(filePath, 'knowledge');
+    await useCase.execute(filePath, 'knowledge');
 
-    expect(sources[0].type).toBe('knowledge');
+    const sources = sourceRepo.getSourcesByType('knowledge');
+    expect(sources.ok).toBe(true);
+    if (!sources.ok) return;
+    expect(sources.value[0].type).toBe('knowledge');
   });
 
   it('checks file size limit skips large files', async () => {
-    const useCase = new ImportSourcesUseCase(db);
+    const ai = new OpenAiAiService();
+    const sourceRepo = new SqliteSourceRepository(db);
+    const fileSource = new FileSourceAdapter();
+    const useCase = new ImportSourcesUseCase(sourceRepo, fileSource, ai, logger);
     const largeContent = 'x'.repeat(11 * 1024 * 1024);
     const filePath = createTestFile(largeContent);
 
-    const sources = await useCase.execute(filePath, 'voice');
+    const count = await useCase.execute(filePath, 'voice');
 
-    expect(sources).toHaveLength(0);
+    expect(count).toBe(0);
   });
 
   it('generates embeddings for imported sources', async () => {
-    const useCase = new ImportSourcesUseCase(db);
+    const ai = new OpenAiAiService();
+    const sourceRepo = new SqliteSourceRepository(db);
+    const fileSource = new FileSourceAdapter();
+    const useCase = new ImportSourcesUseCase(sourceRepo, fileSource, ai, logger);
     const filePath = createTestFile('# Test\n\nSome content for embedding.');
 
     await useCase.execute(filePath, 'voice');
@@ -123,43 +130,56 @@ describe('GenerateProfilesUseCase', () => {
   });
 
   it('generates a voice profile from imported sources', async () => {
-    const importUseCase = new ImportSourcesUseCase(db);
-    const genUseCase = new GenerateProfilesUseCase(db);
+    const ai = new OpenAiAiService();
+    const sourceRepo = new SqliteSourceRepository(db);
+    const fileSource = new FileSourceAdapter();
+    const importUseCase = new ImportSourcesUseCase(sourceRepo, fileSource, ai, logger);
+    const genUseCase = new GenerateProfilesUseCase(ai, new SqliteProfileRepository(db), sourceRepo, logger);
 
-    const filePath = createTestFile('# My Writing\n\nI believe in clean architecture. It separates concerns effectively and makes testing straightforward.');
+    const filePath = createTestFile('# My Writing\n\nI believe in clean architecture.');
     await importUseCase.execute(filePath, 'voice');
 
-    const profile = await genUseCase.generateVoiceProfile();
-
-    expect(profile.id).toBeTruthy();
-    expect(profile.traits).toBeDefined();
-    expect(profile.summary).toBeTruthy();
+    const result = await genUseCase.generateVoiceProfile();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.id).toBeTruthy();
+    expect(result.value.traits).toBeDefined();
+    expect(result.value.summary).toBeTruthy();
   });
 
-  it('throws when no voice sources exist', async () => {
-    const genUseCase = new GenerateProfilesUseCase(db);
+  it('returns error when no voice sources exist', async () => {
+    const ai = new OpenAiAiService();
+    const genUseCase = new GenerateProfilesUseCase(ai, new SqliteProfileRepository(db), new SqliteSourceRepository(db), logger);
 
-    await expect(genUseCase.generateVoiceProfile()).rejects.toThrow(
-      'No voice sources imported',
-    );
+    const result = await genUseCase.generateVoiceProfile();
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('No voice sources imported');
   });
 
   it('generates a knowledge profile', async () => {
-    const importUseCase = new ImportSourcesUseCase(db);
-    const genUseCase = new GenerateProfilesUseCase(db);
+    const ai = new OpenAiAiService();
+    const sourceRepo = new SqliteSourceRepository(db);
+    const fileSource = new FileSourceAdapter();
+    const importUseCase = new ImportSourcesUseCase(sourceRepo, fileSource, ai, logger);
+    const genUseCase = new GenerateProfilesUseCase(ai, new SqliteProfileRepository(db), sourceRepo, logger);
 
     const filePath = createTestFile('# Architecture\n\nFlutter uses a widget tree. Riverpod providers are scoped.');
     await importUseCase.execute(filePath, 'knowledge');
 
-    const profile = await genUseCase.generateKnowledgeProfile();
-
-    expect(profile.id).toBeTruthy();
-    expect(profile.domains).toBeDefined();
+    const result = await genUseCase.generateKnowledgeProfile();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.id).toBeTruthy();
+    expect(result.value.domains).toBeDefined();
   });
 
   it('stores profile embedding in vec_profiles', async () => {
-    const importUseCase = new ImportSourcesUseCase(db);
-    const genUseCase = new GenerateProfilesUseCase(db);
+    const ai = new OpenAiAiService();
+    const sourceRepo = new SqliteSourceRepository(db);
+    const fileSource = new FileSourceAdapter();
+    const importUseCase = new ImportSourcesUseCase(sourceRepo, fileSource, ai, logger);
+    const genUseCase = new GenerateProfilesUseCase(ai, new SqliteProfileRepository(db), sourceRepo, logger);
 
     const filePath = createTestFile('# Journal\n\nPersonal reflections on coding.');
     await importUseCase.execute(filePath, 'voice');

@@ -2,7 +2,9 @@ import type { Command } from 'commander';
 import { getDatabase } from '../../infrastructure/persistence/database.ts';
 import { logger } from '../../infrastructure/logging/logger.ts';
 import { GenerateProfilesUseCase } from '../../application/use-cases/generate-profiles.usecase.ts';
-import { getSourceCountByType } from '../../infrastructure/persistence/repositories/source-repository.ts';
+import { OpenAiAiService } from '../../infrastructure/ai/ai.service.ts';
+import { SqliteProfileRepository } from '../../infrastructure/persistence/repositories/sqlite-profile-repository.ts';
+import { SqliteSourceRepository } from '../../infrastructure/persistence/repositories/sqlite-source-repository.ts';
 
 export function registerProfileCommand(program: Command): void {
   const profileCmd = program.command('profile').description('Manage identity profiles');
@@ -13,12 +15,19 @@ export function registerProfileCommand(program: Command): void {
     .action(async () => {
       try {
         const db = getDatabase();
-        const useCase = new GenerateProfilesUseCase(db);
+        const ai = new OpenAiAiService();
+        const profileRepo = new SqliteProfileRepository(db);
+        const sourceRepo = new SqliteSourceRepository(db);
+        const useCase = new GenerateProfilesUseCase(ai, profileRepo, sourceRepo, logger);
+
+        const voiceCount = sourceRepo.getSourceCountByType('voice');
+        const knowledgeCount = sourceRepo.getSourceCountByType('knowledge');
+        const pubCount = sourceRepo.getSourceCountByType('publication');
 
         const counts = {
-          voice: getSourceCountByType(db, 'voice'),
-          knowledge: getSourceCountByType(db, 'knowledge'),
-          publication: getSourceCountByType(db, 'publication'),
+          voice: voiceCount.ok ? voiceCount.value : 0,
+          knowledge: knowledgeCount.ok ? knowledgeCount.value : 0,
+          publication: pubCount.ok ? pubCount.value : 0,
         };
 
         if (counts.voice === 0 && counts.knowledge === 0 && counts.publication === 0) {
@@ -30,23 +39,35 @@ export function registerProfileCommand(program: Command): void {
 
         if (counts.voice > 0) {
           console.log('  Generating voice profile...');
-          const voice = await useCase.generateVoiceProfile();
-          console.log(`  Voice profile: ${voice.id}`);
-          console.log(`    Summary: ${voice.summary}`);
+          const result = await useCase.generateVoiceProfile();
+          if (!result.ok) {
+            console.error(`  Voice profile failed: ${result.error}`);
+          } else {
+            console.log(`  Voice profile: ${result.value.id}`);
+            console.log(`    Summary: ${result.value.summary}`);
+          }
         }
 
         if (counts.knowledge > 0) {
           console.log('  Generating knowledge profile...');
-          const knowledge = await useCase.generateKnowledgeProfile();
-          console.log(`  Knowledge profile: ${knowledge.id}`);
-          console.log(`    Domains: ${knowledge.domains.join(', ')}`);
+          const result = await useCase.generateKnowledgeProfile();
+          if (!result.ok) {
+            console.error(`  Knowledge profile failed: ${result.error}`);
+          } else {
+            console.log(`  Knowledge profile: ${result.value.id}`);
+            console.log(`    Domains: ${result.value.domains.join(', ')}`);
+          }
         }
 
         if (counts.publication > 0) {
           console.log('  Generating publication profile...');
-          const pub = await useCase.generatePublicationProfile();
-          console.log(`  Publication profile: ${pub.id}`);
-          console.log(`    Themes: ${pub.themes.join(', ')}`);
+          const result = await useCase.generatePublicationProfile();
+          if (!result.ok) {
+            console.error(`  Publication profile failed: ${result.error}`);
+          } else {
+            console.log(`  Publication profile: ${result.value.id}`);
+            console.log(`    Themes: ${result.value.themes.join(', ')}`);
+          }
         }
 
         console.log();
@@ -54,7 +75,7 @@ export function registerProfileCommand(program: Command): void {
 
         db.close();
       } catch (error) {
-        logger.error({ error }, 'Profile generation failed');
+        logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Profile generation failed');
         console.error('Profile generation failed:', error instanceof Error ? error.message : error);
         process.exit(1);
       }
@@ -83,16 +104,17 @@ export function registerProfileCommand(program: Command): void {
           )
           .get() as Record<string, unknown> | undefined;
 
-        const voiceCount = getSourceCountByType(db, 'voice');
-        const knowledgeCount = getSourceCountByType(db, 'knowledge');
-        const pubCount = getSourceCountByType(db, 'publication');
+        const sourceRepo = new SqliteSourceRepository(db);
+        const voiceCount = sourceRepo.getSourceCountByType('voice');
+        const knowledgeCount = sourceRepo.getSourceCountByType('knowledge');
+        const pubCount = sourceRepo.getSourceCountByType('publication');
 
         console.log('Thoth Status');
         console.log();
         console.log('Sources:');
-        console.log(`  Voice:        ${voiceCount} chunks`);
-        console.log(`  Knowledge:    ${knowledgeCount} chunks`);
-        console.log(`  Publications: ${pubCount} chunks`);
+        console.log(`  Voice:        ${voiceCount.ok ? voiceCount.value : 0} chunks`);
+        console.log(`  Knowledge:    ${knowledgeCount.ok ? knowledgeCount.value : 0} chunks`);
+        console.log(`  Publications: ${pubCount.ok ? pubCount.value : 0} chunks`);
         console.log();
         console.log('Profiles:');
         console.log(
@@ -107,7 +129,7 @@ export function registerProfileCommand(program: Command): void {
 
         db.close();
       } catch (error) {
-        logger.error({ error }, 'Status check failed');
+        logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Status check failed');
         console.error('Status check failed:', error instanceof Error ? error.message : error);
         process.exit(1);
       }
