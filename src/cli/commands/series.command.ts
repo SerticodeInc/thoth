@@ -3,6 +3,8 @@ import { getDatabase } from '../../infrastructure/persistence/database.ts';
 import { logger } from '../../infrastructure/logging/logger.ts';
 import { SeriesUseCase } from '../../application/use-cases/series.usecase.ts';
 import { SqliteSeriesRepository } from '../../infrastructure/persistence/repositories/sqlite-series-repository.ts';
+import * as ui from '../ui.ts';
+import { withCliError } from '../error-handler.ts';
 
 export function registerSeriesCommand(program: Command): void {
   program
@@ -11,63 +13,56 @@ export function registerSeriesCommand(program: Command): void {
     .argument('<name>', 'Series name')
     .option('-d, --description <text>', 'Series description')
     .action(async (name: string, options: { description?: string }) => {
-      try {
+      await withCliError(logger, 'Series create', async () => {
         const db = getDatabase();
         const repo = new SqliteSeriesRepository(db);
         const useCase = new SeriesUseCase(repo, logger);
 
         const result = await useCase.create(name, options.description);
         if (!result.ok) {
-          console.error(`Failed to create series: ${result.error}`);
+          ui.error(`Failed to create series: ${result.error}`);
           process.exit(1);
         }
 
-        console.log(`Series created: ${result.value.name}`);
-        console.log(`ID: ${result.value.id}`);
+        ui.success(`Series created: ${result.value.name}`);
+        ui.meta('ID', result.value.id);
 
         db.close();
-      } catch (error) {
-        logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Series create command failed');
-        console.error('Failed to create series:', error instanceof Error ? error.message : error);
-        process.exit(1);
-      }
+      });
     });
 
   program
     .command('list_series')
     .description('List all series')
     .action(async () => {
-      try {
+      await withCliError(logger, 'Series list', async () => {
         const db = getDatabase();
         const repo = new SqliteSeriesRepository(db);
         const useCase = new SeriesUseCase(repo, logger);
 
         const result = await useCase.list();
         if (!result.ok) {
-          console.error(`Failed to list series: ${result.error}`);
+          ui.error(`Failed to list series: ${result.error}`);
           process.exit(1);
         }
 
         if (result.value.length === 0) {
-          console.log('No series created yet. Run `thoth create_series <name>`');
+          ui.empty('No series created yet.');
+          ui.nextSteps(['thoth create_series <name>']);
           db.close();
           return;
         }
 
-        console.log('Series:');
+        ui.heading('Series');
         for (const series of result.value) {
-          console.log(`  ${series.id.slice(0, 8)}  ${series.name} (${series.articleIds.length} articles)`);
+          ui.item(series.id.slice(0, 8), `${series.name} (${series.articleIds.length} articles)`);
           if (series.description) {
-            console.log(`       ${series.description}`);
+            ui.empty(`  ${series.description}`);
           }
         }
 
         db.close();
-      } catch (error) {
-        logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Series list command failed');
-        console.error('Failed to list series:', error instanceof Error ? error.message : error);
-        process.exit(1);
-      }
+      });
     });
 
   program
@@ -76,25 +71,21 @@ export function registerSeriesCommand(program: Command): void {
     .argument('<series-id>', 'Series ID')
     .argument('<article-id>', 'Article ID')
     .action(async (seriesId: string, articleId: string) => {
-      try {
+      await withCliError(logger, 'Series add', async () => {
         const db = getDatabase();
         const repo = new SqliteSeriesRepository(db);
         const useCase = new SeriesUseCase(repo, logger);
 
         const result = await useCase.addArticle(seriesId, articleId);
         if (!result.ok) {
-          console.error(`Failed to add article: ${result.error}`);
+          ui.error(`Failed to add article: ${result.error}`);
           process.exit(1);
         }
 
-        console.log(`Article ${articleId.slice(0, 8)} added to series ${seriesId.slice(0, 8)}`);
+        ui.success(`Article ${articleId.slice(0, 8)} added to series ${seriesId.slice(0, 8)}`);
 
         db.close();
-      } catch (error) {
-        logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Series add command failed');
-        console.error('Failed to add article:', error instanceof Error ? error.message : error);
-        process.exit(1);
-      }
+      });
     });
 
   program
@@ -102,36 +93,32 @@ export function registerSeriesCommand(program: Command): void {
     .description('Show series details')
     .argument('<id>', 'Series ID')
     .action(async (id: string) => {
-      try {
+      await withCliError(logger, 'Series get', async () => {
         const db = getDatabase();
         const repo = new SqliteSeriesRepository(db);
         const useCase = new SeriesUseCase(repo, logger);
 
         const result = await useCase.get(id);
         if (!result.ok) {
-          console.error(`Failed to get series: ${result.error}`);
+          ui.error(`Failed to get series: ${result.error}`);
           process.exit(1);
         }
 
         if (!result.value) {
-          console.error(`Series not found: ${id}`);
+          ui.error(`Series not found: ${id}`);
           process.exit(1);
         }
 
-        console.log(`Series: ${result.value.name}`);
-        if (result.value.description) console.log(`Description: ${result.value.description}`);
-        console.log(`Created: ${result.value.createdAt.toLocaleString()}`);
-        console.log(`Articles: ${result.value.articleIds.length}`);
-        console.log();
+        ui.heading(result.value.name);
+        if (result.value.description) ui.meta('Description', result.value.description);
+        ui.meta('Created', result.value.createdAt.toLocaleString());
+        ui.meta('Articles', result.value.articleIds.length);
+        ui.blank();
         for (const articleId of result.value.articleIds) {
-          console.log(`  ${articleId}`);
+          ui.item(articleId.slice(0, 8), articleId);
         }
 
         db.close();
-      } catch (error) {
-        logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Series get command failed');
-        console.error('Failed to get series:', error instanceof Error ? error.message : error);
-        process.exit(1);
-      }
+      });
     });
 }

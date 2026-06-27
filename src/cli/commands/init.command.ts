@@ -1,15 +1,16 @@
 import type { Command } from 'commander';
-import { getDatabase } from '../../infrastructure/persistence/database.ts';
 import { logger } from '../../infrastructure/logging/logger.ts';
+import { getDatabase } from '../../infrastructure/persistence/database.ts';
 import { SqliteSourceRepository } from '../../infrastructure/persistence/repositories/sqlite-source-repository.ts';
+import { withCliError } from '../error-handler.ts';
 import * as ui from '../ui.ts';
 
 export function registerInitCommand(program: Command): void {
   program
     .command('init')
     .description('Initialize Thoth — create database and run migrations')
-    .action(() => {
-      try {
+    .action(async () => {
+      await withCliError(logger, 'Init', async () => {
         logger.info('Initializing Thoth');
 
         const db = getDatabase();
@@ -32,17 +33,18 @@ export function registerInitCommand(program: Command): void {
 
         ui.success('Thoth initialized.');
         ui.meta('Database', '~/.thoth/thoth.db');
-        ui.meta('Sources', `${counts.voice} voice, ${counts.knowledge} knowledge, ${counts.publication} publication`);
+        ui.meta(
+          'Sources',
+          `${counts.voice} voice, ${counts.knowledge} knowledge, ${counts.publication} publication`,
+        );
         ui.blank();
 
         const isLocal = process.env.THOTH_LOCAL === 'true';
         if (!isLocal) {
           ui.section('Privacy notice');
-          ui.warn(
-            '  Thoth sends source content to external AI providers (OpenAI, Groq, Gemini)',
-          );
+          ui.warn('  Thoth sends source content to external AI providers (OpenAI, Groq, Gemini)');
           ui.warn('  for profile generation and embedding.');
-          ui.info('Run with --local to use only local AI (Ollama) and keep data on-device.');
+          ui.info('Run with --local to use only local AI (Ollama) and keep data on device.');
           ui.blank();
         }
 
@@ -57,10 +59,6 @@ export function registerInitCommand(program: Command): void {
         ]);
 
         db.close();
-      } catch (error) {
-        logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Init failed');
-        ui.error(`Init failed: ${error instanceof Error ? error.message : String(error)}`);
-        process.exit(1);
-      }
+      });
     });
 }

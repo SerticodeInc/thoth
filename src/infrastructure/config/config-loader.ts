@@ -5,6 +5,10 @@ import { thothConfigSchema, type ThothConfig } from './config.schema.ts';
 
 const CONFIG_FILENAME = 'thoth.json';
 
+function configWarn(message: string): void {
+  process.stderr.write(`\u001b[33m[config]\u001b[0m ${message}\n`);
+}
+
 function findConfigFiles(): string[] {
   const paths: string[] = [];
 
@@ -28,12 +32,12 @@ function readAndParseConfig(filePath: string): ThothConfig {
     const parsed: unknown = JSON.parse(raw);
     const result = thothConfigSchema.safeParse(parsed);
     if (!result.success) {
-      console.warn(`Config file ${filePath} has invalid fields: ${result.error.message}`);
+      configWarn(`Config file ${filePath} has invalid fields: ${result.error.message}`);
       return {};
     }
     return result.data;
   } catch (error) {
-    console.warn(`Could not read config file ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+    configWarn(`Could not read config file ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
     return {};
   }
 }
@@ -51,7 +55,7 @@ export function loadConfig(): ThothConfig {
 }
 
 const DEFAULTS: ThothConfig = {
-  logLevel: 'info',
+  logLevel: 'warn',
 };
 
 export function resolveConfig(cliLocal?: boolean, cliProvider?: string): ThothConfig {

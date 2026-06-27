@@ -5,6 +5,12 @@ import type { Result } from '../entities/result.ts';
 
 export type ProfileType = 'voice' | 'knowledge' | 'publication';
 
+export interface ProfileStatus {
+  voice: { exists: true; id: string; summary: string } | { exists: false };
+  knowledge: { exists: true; id: string; domains: string } | { exists: false };
+  publication: { exists: true; id: string; themes: string } | { exists: false };
+}
+
 export interface ProfileRepository {
   saveVoiceProfile(profile: VoiceProfile): Promise<Result<VoiceProfile>>;
   getVoiceProfile(id: string): Promise<Result<VoiceProfile | null>>;
@@ -19,4 +25,6 @@ export interface ProfileRepository {
   getLatestPublicationProfile(): Promise<Result<PublicationProfile | null>>;
 
   saveProfileEmbedding(profileId: string, type: ProfileType, embedding: number[]): Promise<Result<void>>;
+
+  getProfileStatus(): Promise<Result<ProfileStatus>>;
 }

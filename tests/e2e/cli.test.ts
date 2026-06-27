@@ -1,10 +1,14 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { execSync } from 'child_process';
 import { unlinkSync, existsSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 
 const CLI = 'npx tsx src/index.ts';
+
+function runCli(...args: string[]): string {
+  return execSync(`${CLI} ${args.join(' ')} 2>&1`, { encoding: 'utf-8' });
+}
 
 describe('CLI e2e', () => {
   const testDb = join(homedir(), '.thoth', 'thoth.db');
@@ -16,7 +20,7 @@ describe('CLI e2e', () => {
   });
 
   it('shows help', () => {
-    const output = execSync(`${CLI} --help`, { encoding: 'utf-8' });
+    const output = runCli('--help');
     expect(output).toContain('thoth');
     expect(output).toContain('init');
     expect(output).toContain('import_voice');
@@ -24,25 +28,23 @@ describe('CLI e2e', () => {
   });
 
   it('shows version', () => {
-    const output = execSync(`${CLI} --version`, { encoding: 'utf-8' });
+    const output = runCli('--version');
     expect(output).toContain('1.0.0');
   });
 
   it('runs init successfully', () => {
-    const output = execSync(`${CLI} init`, { encoding: 'utf-8' });
+    const output = runCli('init');
     expect(output).toContain('Thoth initialized');
     expect(output).toContain('0 voice, 0 knowledge, 0 publication');
   });
 
   it('shows profile status after init', () => {
-    const output = execSync(`${CLI} profile_status`, { encoding: 'utf-8' });
-    expect(output).toContain('❌ Not generated');
+    const output = runCli('profile_status');
+    expect(output).toContain('[missing]');
   });
 
   it('imports a voice file', () => {
-    const output = execSync(`${CLI} import_voice tests/fixtures/sample-journal.md`, {
-      encoding: 'utf-8',
-    });
-    expect(output).toContain('Import complete');
+    const output = runCli('import_voice', 'tests/fixtures/sample-journal.md');
+    expect(output).toContain('[ok] Import complete');
   });
 });

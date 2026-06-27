@@ -1,4 +1,6 @@
-const useColor = process.stdout.isTTY && process.env.NO_COLOR === undefined;
+import ora, { type Ora } from 'ora';
+
+const useColor = process.stderr.isTTY && process.env.NO_COLOR === undefined;
 
 const codes = {
   reset: '\u001b[0m',
@@ -37,53 +39,116 @@ export const color = {
   bold,
 };
 
+function writeStderr(value: string): void {
+  process.stderr.write(value + '\n');
+}
+
 export function blank(): void {
-  console.log();
+  writeStderr('');
 }
 
 export function heading(value: string): void {
-  console.log(color.cyan(color.bold(value)));
+  writeStderr(color.cyan(color.bold(value)));
 }
 
 export function section(value: string): void {
-  console.log(color.blue(color.bold(value)));
+  writeStderr(color.blue(color.bold(value)));
 }
 
 export function step(value: string): void {
-  console.log(`${color.cyan('>')} ${value}`);
+  writeStderr(`${color.cyan('>')} ${value}`);
 }
 
 export function success(value: string): void {
-  console.log(`${color.green('[ok]')} ${value}`);
+  writeStderr(`${color.green('[ok]')} ${value}`);
 }
 
 export function warn(value: string): void {
-  console.warn(`${color.yellow('[warn]')} ${value}`);
+  writeStderr(`${color.yellow('[warn]')} ${value}`);
 }
 
 export function error(value: string): void {
-  console.error(`${color.red('[error]')} ${value}`);
+  writeStderr(`${color.red('[error]')} ${value}`);
 }
 
 export function info(value: string): void {
-  console.log(`${color.blue('[info]')} ${value}`);
+  writeStderr(`${color.blue('[info]')} ${value}`);
 }
 
 export function empty(value: string): void {
-  console.log(color.dim(value));
+  writeStderr(color.dim(value));
 }
 
 export function meta(label: string, value: string | number): void {
-  console.log(`  ${color.gray(label.padEnd(14))} ${value}`);
+  writeStderr(`  ${color.gray(label.padEnd(16))} ${value}`);
 }
 
 export function item(id: string, value: string): void {
-  console.log(`  ${color.gray(id)}  ${value}`);
+  writeStderr(`  ${color.gray(id)}  ${value}`);
+}
+
+export function divider(): void {
+  writeStderr(color.dim('\u2500'.repeat(48)));
+}
+
+export function output(value: string): void {
+  process.stdout.write(value + '\n');
+}
+
+export function timer(start: [number, number]): string {
+  const elapsed = process.hrtime(start);
+  const ms = elapsed[0] * 1000 + elapsed[1] / 1_000_000;
+  if (ms < 1000) return `${ms.toFixed(1)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const min = Math.floor(ms / 60_000);
+  const sec = ((ms % 60_000) / 1000).toFixed(0);
+  return `${min}m ${sec}s`;
+}
+
+export interface Spinner {
+  start(text?: string): void;
+  stop(finalText?: string): void;
+  setText(text: string): void;
+  isSpinning: boolean;
+}
+
+export function spinner(initialText?: string): Spinner {
+  let instance: Ora | null = null;
+
+  return {
+    start(text?: string) {
+      if (!instance) {
+        instance = ora({ text: text ?? initialText, color: 'cyan' }).start();
+      }
+    },
+    stop(finalText?: string) {
+      if (instance) {
+        instance.stop();
+        if (finalText) writeStderr(`  ${color.green(finalText)}`);
+        instance = null;
+      }
+    },
+    setText(text: string) {
+      if (instance) instance.text = text;
+    },
+    get isSpinning(): boolean {
+      return instance !== null;
+    },
+  };
+}
+
+export function summary(entries: Record<string, string>): void {
+  const keys = Object.keys(entries);
+  const labelWidth = Math.max(...keys.map((k) => k.length));
+  writeStderr(color.bold(color.cyan('Summary')));
+  for (const [label, value] of Object.entries(entries)) {
+    writeStderr(`  ${color.gray(label.padEnd(labelWidth + 2))} ${value}`);
+  }
 }
 
 export function nextSteps(steps: readonly string[]): void {
   section('Next steps');
   for (const command of steps) {
-    console.log(`  ${color.magenta(command)}`);
+    writeStderr(`  ${color.magenta(command)}`);
   }
 }

@@ -9,6 +9,8 @@ import { ExportArticleUseCase } from '../../application/use-cases/export-article
 import { ExportSeriesUseCase } from '../../application/use-cases/export-series.usecase.ts';
 import type { ExportFormat } from '../../application/use-cases/export-article.usecase.ts';
 import type { SeriesExportFormat } from '../../application/use-cases/export-series.usecase.ts';
+import * as ui from '../ui.ts';
+import { withCliError } from '../error-handler.ts';
 
 const VALID_ARTICLE_FORMATS = ['md', 'html', 'txt'];
 const VALID_SERIES_FORMATS = ['md', 'html', 'rss'];
@@ -21,9 +23,9 @@ export function registerExportCommand(program: Command): void {
     .option('-f, --format <format>', 'Output format (md, html, txt)', 'md')
     .option('-o, --output <path>', 'Output directory', '.')
     .action(async (id: string, options: { format: string; output: string }) => {
-      try {
+      await withCliError(logger, 'Export article', async () => {
         if (!VALID_ARTICLE_FORMATS.includes(options.format)) {
-          console.error(`Invalid format. Choose one of: ${VALID_ARTICLE_FORMATS.join(', ')}`);
+          ui.error(`Invalid format. Choose one of: ${VALID_ARTICLE_FORMATS.join(', ')}`);
           process.exit(1);
         }
 
@@ -37,7 +39,7 @@ export function registerExportCommand(program: Command): void {
         });
 
         if (!result.ok) {
-          console.error(`Export failed: ${result.error}`);
+          ui.error(`Export failed: ${result.error}`);
           process.exit(1);
         }
 
@@ -49,14 +51,11 @@ export function registerExportCommand(program: Command): void {
         const outPath = join(outDir, result.value.filename);
         writeFileSync(outPath, result.value.content, 'utf-8');
 
-        console.log(`Exported: ${outPath}`);
+        ui.success('Article exported.');
+        ui.meta('Path', outPath);
 
         db.close();
-      } catch (error) {
-        logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Export article command failed');
-        console.error('Export failed:', error instanceof Error ? error.message : error);
-        process.exit(1);
-      }
+      });
     });
 
   program
@@ -66,9 +65,9 @@ export function registerExportCommand(program: Command): void {
     .option('-f, --format <format>', 'Output format (md, html, rss)', 'md')
     .option('-o, --output <path>', 'Output directory', '.')
     .action(async (id: string, options: { format: string; output: string }) => {
-      try {
+      await withCliError(logger, 'Export series', async () => {
         if (!VALID_SERIES_FORMATS.includes(options.format)) {
-          console.error(`Invalid format. Choose one of: ${VALID_SERIES_FORMATS.join(', ')}`);
+          ui.error(`Invalid format. Choose one of: ${VALID_SERIES_FORMATS.join(', ')}`);
           process.exit(1);
         }
 
@@ -83,7 +82,7 @@ export function registerExportCommand(program: Command): void {
         });
 
         if (!result.ok) {
-          console.error(`Export failed: ${result.error}`);
+          ui.error(`Export failed: ${result.error}`);
           process.exit(1);
         }
 
@@ -95,13 +94,10 @@ export function registerExportCommand(program: Command): void {
         const outPath = join(outDir, result.value.filename);
         writeFileSync(outPath, result.value.content, 'utf-8');
 
-        console.log(`Exported: ${outPath}`);
+        ui.success('Series exported.');
+        ui.meta('Path', outPath);
 
         db.close();
-      } catch (error) {
-        logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Export series command failed');
-        console.error('Export failed:', error instanceof Error ? error.message : error);
-        process.exit(1);
-      }
+      });
     });
 }

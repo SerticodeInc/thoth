@@ -5,6 +5,7 @@ import type { PublicationProfile } from '../../../domain/entities/publication-pr
 import type {
   ProfileRepository,
   ProfileType,
+  ProfileStatus,
 } from '../../../domain/repositories/profile-repository.ts';
 import type { Result } from '../../../domain/entities/result.ts';
 import {
@@ -166,6 +167,40 @@ export class SqliteProfileRepository implements ProfileRepository {
 
     const schema = this.schemaForType(type);
     return parseRow(schema, row, `${type} profile`);
+  }
+
+  getProfileStatus(): Promise<Result<ProfileStatus>> {
+    try {
+      const voiceRow = this.db
+        .prepare('SELECT id, summary FROM voice_profiles ORDER BY created_at DESC LIMIT 1')
+        .get() as { id: string; summary: string } | undefined;
+      const knowledgeRow = this.db
+        .prepare('SELECT id, domains FROM knowledge_profiles ORDER BY created_at DESC LIMIT 1')
+        .get() as { id: string; domains: string } | undefined;
+      const pubRow = this.db
+        .prepare('SELECT id, themes FROM publication_profiles ORDER BY created_at DESC LIMIT 1')
+        .get() as { id: string; themes: string } | undefined;
+
+      return Promise.resolve({
+        ok: true,
+        value: {
+          voice: voiceRow
+            ? { exists: true, id: voiceRow.id, summary: voiceRow.summary }
+            : { exists: false },
+          knowledge: knowledgeRow
+            ? { exists: true, id: knowledgeRow.id, domains: knowledgeRow.domains }
+            : { exists: false },
+          publication: pubRow
+            ? { exists: true, id: pubRow.id, themes: pubRow.themes }
+            : { exists: false },
+        },
+      });
+    } catch (error) {
+      return Promise.resolve({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private tableForType(type: ProfileType): string {

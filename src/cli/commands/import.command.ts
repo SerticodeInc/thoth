@@ -8,6 +8,7 @@ import { logger } from '../../infrastructure/logging/logger.ts';
 import { getDatabase } from '../../infrastructure/persistence/database.ts';
 import { SqliteSourceRepository } from '../../infrastructure/persistence/repositories/sqlite-source-repository.ts';
 import * as ui from '../ui.ts';
+import { withCliError } from '../error-handler.ts';
 
 export function registerImportCommand(program: Command): void {
   program
@@ -36,12 +37,14 @@ export function registerImportCommand(program: Command): void {
 }
 
 async function runImport(sourcePath: string, type: SourceType): Promise<void> {
-  try {
+  await withCliError(logger, 'Import', async () => {
     const db = getDatabase();
     const ai = new OpenAiAiService();
     const sourceRepo = new SqliteSourceRepository(db);
     const fileSource = new FileSourceAdapter();
     const useCase = new ImportSourcesUseCase(sourceRepo, fileSource, ai, logger);
+
+    const startTime = process.hrtime();
 
     ui.heading(`Importing ${type} sources`);
     ui.meta('Path', sourcePath);
@@ -57,6 +60,7 @@ async function runImport(sourcePath: string, type: SourceType): Promise<void> {
       hideCursor: true,
     });
 
+    let embeddingsOk = false;
     ui.step('Generating embeddings...');
     try {
       embedBar.start(count, 0);
@@ -65,6 +69,7 @@ async function runImport(sourcePath: string, type: SourceType): Promise<void> {
       });
       embedBar.stop();
       ui.success('Embeddings complete.');
+      embeddingsOk = true;
     } catch (error) {
       embedBar.stop();
       ui.warn('Embedding generation failed. You can retry by running import again.');
@@ -74,15 +79,18 @@ async function runImport(sourcePath: string, type: SourceType): Promise<void> {
 
     db.close();
 
+    const duration = ui.timer(startTime);
+
     ui.blank();
     ui.success('Import complete.');
+    ui.divider();
+    ui.summary({
+      Type: type,
+      'Chunks imported': String(count),
+      Embeddings: embeddingsOk ? 'complete' : 'failed',
+      Duration: duration,
+    });
+    ui.blank();
     ui.nextSteps(['thoth generate_profile  Create identity profiles from imported sources']);
-  } catch (error) {
-    logger.error(
-      { error: error instanceof Error ? error.message : String(error), type },
-      'Import failed',
-    );
-    ui.error(`Import failed: ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(1);
-  }
+  });
 }

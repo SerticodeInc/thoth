@@ -5,13 +5,20 @@ import { GenerateProfilesUseCase } from '../../application/use-cases/generate-pr
 import { OpenAiAiService } from '../../infrastructure/ai/ai.service.ts';
 import { SqliteProfileRepository } from '../../infrastructure/persistence/repositories/sqlite-profile-repository.ts';
 import { SqliteSourceRepository } from '../../infrastructure/persistence/repositories/sqlite-source-repository.ts';
+import * as ui from '../ui.ts';
+import { withCliError } from '../error-handler.ts';
+
+function preview(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return `${value.slice(0, 60)}...`;
+}
 
 export function registerProfileCommand(program: Command): void {
   program
     .command('generate_profile')
     .description('Generate identity profiles from imported sources')
     .action(async () => {
-      try {
+      await withCliError(logger, 'Profile generation', async () => {
         const db = getDatabase();
         const ai = new OpenAiAiService();
         const profileRepo = new SqliteProfileRepository(db);
@@ -29,56 +36,69 @@ export function registerProfileCommand(program: Command): void {
         };
 
         if (counts.voice === 0 && counts.knowledge === 0 && counts.publication === 0) {
-          console.error('No sources imported. Run `thoth import_voice` first.');
+          ui.error('No sources imported.');
+          ui.nextSteps(['thoth import_voice <path>  Import writing samples']);
           process.exit(1);
         }
 
-        console.log('Generating identity profiles...');
+        ui.heading('Generating identity profiles');
+        ui.meta('Voice chunks', counts.voice);
+        ui.meta('Knowledge chunks', counts.knowledge);
+        ui.meta('Publication chunks', counts.publication);
+        ui.blank();
         let generatedCount = 0;
         const failures: string[] = [];
+        const startTime = process.hrtime();
 
         if (counts.voice > 0) {
-          console.log('  Generating voice profile...');
+          const spin = ui.spinner('Generating voice profile...');
+          spin.start();
           const result = await useCase.generateVoiceProfile();
+          spin.stop();
           if (!result.ok) {
-            console.error(`  Voice profile failed: ${result.error}`);
+            ui.error(`Voice profile failed: ${result.error}`);
             failures.push(`voice: ${result.error}`);
           } else {
             generatedCount += 1;
-            console.log(`  Voice profile: ${result.value.id}`);
-            console.log(`    Summary: ${result.value.summary}`);
+            ui.success('Voice profile generated');
+            ui.meta('Summary', result.value.summary ?? 'No summary');
           }
         }
 
         if (counts.knowledge > 0) {
-          console.log('  Generating knowledge profile...');
+          const spin = ui.spinner('Generating knowledge profile...');
+          spin.start();
           const result = await useCase.generateKnowledgeProfile();
+          spin.stop();
           if (!result.ok) {
-            console.error(`  Knowledge profile failed: ${result.error}`);
+            ui.error(`Knowledge profile failed: ${result.error}`);
             failures.push(`knowledge: ${result.error}`);
           } else {
             generatedCount += 1;
-            console.log(`  Knowledge profile: ${result.value.id}`);
-            console.log(`    Domains: ${result.value.domains.join(', ')}`);
+            ui.success('Knowledge profile generated');
+            ui.meta('Domains', result.value.domains.join(', '));
           }
         }
 
         if (counts.publication > 0) {
-          console.log('  Generating publication profile...');
+          const spin = ui.spinner('Generating publication profile...');
+          spin.start();
           const result = await useCase.generatePublicationProfile();
+          spin.stop();
           if (!result.ok) {
-            console.error(`  Publication profile failed: ${result.error}`);
+            ui.error(`Publication profile failed: ${result.error}`);
             failures.push(`publication: ${result.error}`);
           } else {
             generatedCount += 1;
-            console.log(`  Publication profile: ${result.value.id}`);
-            console.log(`    Themes: ${result.value.themes.join(', ')}`);
+            ui.success('Publication profile generated');
+            ui.meta('Themes', result.value.themes.join(', '));
           }
         }
 
-        console.log();
+        const duration = ui.timer(startTime);
+        ui.blank();
         if (failures.length > 0) {
-          console.error(
+          ui.error(
             generatedCount > 0
               ? `Profile generation completed with ${failures.length} failure(s).`
               : 'Profile generation failed.',
@@ -87,67 +107,70 @@ export function registerProfileCommand(program: Command): void {
           process.exit(1);
         }
 
-        console.log('Identity profiles generated successfully.');
+        ui.divider();
+        ui.summary({
+          Generated: `${generatedCount} of 3`,
+          Duration: duration,
+        });
+        ui.blank();
+        ui.nextSteps([
+          'thoth profile_status             Review profile readiness',
+          'thoth research "<topic>"         Research from imported knowledge',
+          'thoth generate_article --topic   Draft in your voice',
+        ]);
 
         db.close();
-      } catch (error) {
-        logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Profile generation failed');
-        console.error('Profile generation failed:', error instanceof Error ? error.message : error);
-        process.exit(1);
-      }
+      });
     });
 
   program
     .command('profile_status')
     .description('Show profile generation status')
-    .action(() => {
-      try {
+    .action(async () => {
+      await withCliError(logger, 'Status check', async () => {
         const db = getDatabase();
-
-        const voiceProfile = db
-          .prepare(
-            'SELECT id, summary, created_at FROM voice_profiles ORDER BY created_at DESC LIMIT 1',
-          )
-          .get() as Record<string, unknown> | undefined;
-        const knowledgeProfile = db
-          .prepare(
-            'SELECT id, domains, created_at FROM knowledge_profiles ORDER BY created_at DESC LIMIT 1',
-          )
-          .get() as Record<string, unknown> | undefined;
-        const pubProfile = db
-          .prepare(
-            'SELECT id, themes, created_at FROM publication_profiles ORDER BY created_at DESC LIMIT 1',
-          )
-          .get() as Record<string, unknown> | undefined;
-
+        const profileRepo = new SqliteProfileRepository(db);
         const sourceRepo = new SqliteSourceRepository(db);
+
         const voiceCount = sourceRepo.getSourceCountByType('voice');
         const knowledgeCount = sourceRepo.getSourceCountByType('knowledge');
         const pubCount = sourceRepo.getSourceCountByType('publication');
+        const statusResult = await profileRepo.getProfileStatus();
 
-        console.log('Thoth Status');
-        console.log();
-        console.log('Sources:');
-        console.log(`  Voice:        ${voiceCount.ok ? voiceCount.value : 0} chunks`);
-        console.log(`  Knowledge:    ${knowledgeCount.ok ? knowledgeCount.value : 0} chunks`);
-        console.log(`  Publications: ${pubCount.ok ? pubCount.value : 0} chunks`);
-        console.log();
-        console.log('Profiles:');
-        console.log(
-          `  Voice:        ${voiceProfile ? `✅ ${(voiceProfile.summary as string)?.slice(0, 60)}...` : '❌ Not generated'}`,
+        if (!statusResult.ok) {
+          ui.error(`Status check failed: ${statusResult.error}`);
+          process.exit(1);
+        }
+
+        const status = statusResult.value;
+
+        ui.heading('Thoth status');
+        ui.section('Sources');
+        ui.meta('Voice', `${voiceCount.ok ? voiceCount.value : 0} chunks`);
+        ui.meta('Knowledge', `${knowledgeCount.ok ? knowledgeCount.value : 0} chunks`);
+        ui.meta('Publications', `${pubCount.ok ? pubCount.value : 0} chunks`);
+        ui.blank();
+        ui.section('Profiles');
+        ui.meta(
+          'Voice',
+          status.voice.exists
+            ? `${ui.color.green('[ready]')} ${preview(status.voice.summary)}`
+            : `${ui.color.yellow('[missing]')} Not generated`,
         );
-        console.log(
-          `  Knowledge:    ${knowledgeProfile ? `✅ ${(knowledgeProfile.domains as string)?.slice(0, 60)}...` : '❌ Not generated'}`,
+        ui.meta(
+          'Knowledge',
+          status.knowledge.exists
+            ? `${ui.color.green('[ready]')} ${preview(status.knowledge.domains)}`
+            : `${ui.color.yellow('[missing]')} Not generated`,
         );
-        console.log(
-          `  Publication:  ${pubProfile ? `✅ ${(pubProfile.themes as string)?.slice(0, 60)}...` : '❌ Not generated'}`,
+        ui.meta(
+          'Publication',
+          status.publication.exists
+            ? `${ui.color.green('[ready]')} ${preview(status.publication.themes)}`
+            : `${ui.color.yellow('[missing]')} Not generated`,
         );
 
         db.close();
-      } catch (error) {
-        logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Status check failed');
-        console.error('Status check failed:', error instanceof Error ? error.message : error);
-        process.exit(1);
-      }
+      });
     });
 }

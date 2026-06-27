@@ -2,10 +2,10 @@ import pino from 'pino';
 import type { LoggerPort } from '../../application/ports/logger.ts';
 
 const pinoInstance = pino({
-  level: process.env.LOG_LEVEL ?? 'info',
+  level: process.env.LOG_LEVEL ?? 'warn',
   transport:
     process.env.NODE_ENV !== 'production'
-      ? { target: 'pino/file', options: { destination: 1 } }
+      ? { target: 'pino/file', options: { destination: 2 } }
       : undefined,
 });
 
