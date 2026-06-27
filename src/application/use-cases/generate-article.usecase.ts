@@ -6,6 +6,7 @@ import type { ResearchRepository } from '../../domain/repositories/research-repo
 import type { Article } from '../../domain/entities/article.ts';
 import type { Result } from '../../domain/entities/result.ts';
 import type { LoggerPort } from '../ports/logger.ts';
+import { parseJsonRecord } from './parse-ai-json.ts';
 
 const ARTICLE_PROMPT = `You are writing an article for a specific author. Your goal is to produce text that sounds exactly like them.
 
@@ -89,26 +90,23 @@ export class GenerateArticleUseCase {
     const userMessage = `Write an article${topicSection}${researchSection}`;
 
     const chatResult = await this.ai.chat({
-      systemPrompt: prompt,
+      systemPrompt: `${prompt}\n\nDo not include markdown fences, commentary, or any text outside the JSON object.`,
       userPrompt: userMessage,
+      responseFormat: 'json',
       temperature: 0.7,
     });
 
     if (!chatResult.ok) return { ok: false, error: chatResult.error };
 
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(chatResult.value) as Record<string, unknown>;
-    } catch {
-      return { ok: false, error: 'Invalid JSON response from article generation AI' };
-    }
+    const parsed = parseJsonRecord(chatResult.value);
+    if (!parsed.ok) return { ok: false, error: `Invalid JSON response from article generation AI: ${parsed.error}` };
 
-    if (typeof parsed.title !== 'string' || typeof parsed.content !== 'string') {
+    if (typeof parsed.value.title !== 'string' || typeof parsed.value.content !== 'string') {
       return { ok: false, error: 'Article response missing title or content' };
     }
 
-    const title: string = parsed.title;
-    const content: string = parsed.content;
+    const title: string = parsed.value.title;
+    const content: string = parsed.value.content;
     const wordCount = content.split(/\s+/).length;
 
     const article: Article = {
