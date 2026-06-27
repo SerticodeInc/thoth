@@ -7,6 +7,7 @@ import { OpenAiAiService } from '../../infrastructure/ai/ai.service.ts';
 import { logger } from '../../infrastructure/logging/logger.ts';
 import { getDatabase } from '../../infrastructure/persistence/database.ts';
 import { SqliteSourceRepository } from '../../infrastructure/persistence/repositories/sqlite-source-repository.ts';
+import * as ui from '../ui.ts';
 
 export function registerImportCommand(program: Command): void {
   program
@@ -42,46 +43,46 @@ async function runImport(sourcePath: string, type: SourceType): Promise<void> {
     const fileSource = new FileSourceAdapter();
     const useCase = new ImportSourcesUseCase(sourceRepo, fileSource, ai, logger);
 
-    console.log(`Importing ${type} sources from: ${sourcePath}`);
+    ui.heading(`Importing ${type} sources`);
+    ui.meta('Path', sourcePath);
 
     const count = await useCase.execute(sourcePath, type);
 
-    console.log(`  Imported ${count} chunks.`);
+    ui.success(`Imported ${count} chunks.`);
 
     const embedBar = new cliProgress.SingleBar({
-      format: '  Embedding: [{bar}] {percentage}% | {value}/{total} chunks | {duration_formatted}',
+      format: `  ${ui.color.cyan('Embedding')} [{bar}] {percentage}% | {value}/{total} chunks | {duration_formatted}`,
       barCompleteChar: '\u2588',
       barIncompleteChar: '\u2591',
       hideCursor: true,
     });
 
-    console.log('  Generating embeddings...');
+    ui.step('Generating embeddings...');
     try {
       embedBar.start(count, 0);
-      await useCase.generateEmbeddingsForType(type, (current) => {
+      await useCase.generateEmbeddingsForType(type, (current: number) => {
         embedBar.update(current);
       });
       embedBar.stop();
-      console.log('  Embeddings complete.');
+      ui.success('Embeddings complete.');
     } catch (error) {
       embedBar.stop();
-      console.warn(
-        '  Warning: Embedding generation failed. You can retry by running import again.',
-      );
+      ui.warn('Embedding generation failed. You can retry by running import again.');
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`    ${message}`);
+      ui.warn(message);
     }
 
     db.close();
 
-    console.log();
-    console.log('Import complete. Run `thoth generate_profile` to create identity profiles.');
+    ui.blank();
+    ui.success('Import complete.');
+    ui.nextSteps(['thoth generate_profile  Create identity profiles from imported sources']);
   } catch (error) {
     logger.error(
       { error: error instanceof Error ? error.message : String(error), type },
       'Import failed',
     );
-    console.error('Import failed:', error instanceof Error ? error.message : error);
+    ui.error(`Import failed: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
 }

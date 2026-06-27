@@ -65,18 +65,25 @@ export class SqliteProfileRepository implements ProfileRepository {
   }
 
   saveProfileEmbedding(profileId: string, type: ProfileType, embedding: number[]): Promise<Result<void>> {
-    const insertEmb = this.db.prepare(
-      'INSERT INTO profile_embeddings (profile_id, profile_type, model) VALUES (?, ?, ?)',
-    );
-    const insertVec = this.db.prepare('INSERT INTO vec_profiles (embedding) VALUES (?)');
+    try {
+      const insertEmb = this.db.prepare(
+        'INSERT INTO profile_embeddings (profile_id, profile_type, model) VALUES (?, ?, ?)',
+      );
+      const insertVec = this.db.prepare('INSERT INTO vec_profiles (embedding) VALUES (?)');
 
-    const doInsert = this.db.transaction(() => {
-      insertVec.run(new Float32Array(embedding));
-      insertEmb.run(profileId, type, 'text-embedding-3-small');
-    });
+      const doInsert = this.db.transaction(() => {
+        insertVec.run(new Float32Array(embedding));
+        insertEmb.run(profileId, type, 'text-embedding-3-small');
+      });
 
-    doInsert();
-    return Promise.resolve({ ok: true, value: undefined });
+      doInsert();
+      return Promise.resolve({ ok: true, value: undefined });
+    } catch (error) {
+      return Promise.resolve({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private saveVoiceProfileSync(profile: VoiceProfile): Result<VoiceProfile> {

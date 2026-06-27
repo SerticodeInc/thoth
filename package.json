@@ -1,7 +1,7 @@
 {
   "name": "thoth",
   "version": "1.0.0",
-  "description": "Identity-Preserving Publishing Engine",
+  "description": "Identity Preserving Publishing Engine",
   "type": "module",
   "bin": {
     "thoth": "./dist/index.js"

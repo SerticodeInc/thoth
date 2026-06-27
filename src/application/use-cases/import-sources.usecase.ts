@@ -21,9 +21,10 @@ export class ImportSourcesUseCase {
 
     const sources = await this.fileSource.importFromPath(sourcePath, type);
 
-    const newSources = sources.filter(
-      (s) => !this.sourceRepo.isAlreadyImported(s.sourcePath, s.checksum).ok !== true,
-    );
+    const newSources = sources.filter((s) => {
+      const result = this.sourceRepo.isAlreadyImported(s.sourcePath, s.checksum);
+      return !result.ok || !result.value;
+    });
 
     const skipped = sources.length - newSources.length;
     if (skipped > 0) {

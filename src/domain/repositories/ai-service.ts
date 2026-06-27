@@ -4,6 +4,7 @@ export interface ChatParams {
   readonly systemPrompt: string;
   readonly userPrompt: string;
   readonly temperature?: number;
+  readonly responseFormat?: 'json';
 }
 
 export interface AiService {

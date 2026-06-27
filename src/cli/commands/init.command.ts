@@ -2,6 +2,7 @@ import type { Command } from 'commander';
 import { getDatabase } from '../../infrastructure/persistence/database.ts';
 import { logger } from '../../infrastructure/logging/logger.ts';
 import { SqliteSourceRepository } from '../../infrastructure/persistence/repositories/sqlite-source-repository.ts';
+import * as ui from '../ui.ts';
 
 export function registerInitCommand(program: Command): void {
   program
@@ -29,37 +30,36 @@ export function registerInitCommand(program: Command): void {
           'Thoth initialized successfully',
         );
 
-        console.log('Thoth initialized.');
-        console.log(`  Database: ~/.thoth/thoth.db`);
-        console.log(
-          `  Sources: ${counts.voice} voice, ${counts.knowledge} knowledge, ${counts.publication} publication`,
-        );
-        console.log();
+        ui.success('Thoth initialized.');
+        ui.meta('Database', '~/.thoth/thoth.db');
+        ui.meta('Sources', `${counts.voice} voice, ${counts.knowledge} knowledge, ${counts.publication} publication`);
+        ui.blank();
 
         const isLocal = process.env.THOTH_LOCAL === 'true';
         if (!isLocal) {
-          console.log('Privacy notice:');
-          console.log(
+          ui.section('Privacy notice');
+          ui.warn(
             '  Thoth sends source content to external AI providers (OpenAI, Groq, Gemini)',
           );
-          console.log('  for profile generation and embedding.');
-          console.log('  Run with --local to use only local AI (Ollama) and keep data on-device.');
-          console.log();
+          ui.warn('  for profile generation and embedding.');
+          ui.info('Run with --local to use only local AI (Ollama) and keep data on-device.');
+          ui.blank();
         }
 
-        console.log('Next steps:');
-        console.log('  thoth import_voice <path>         Import voice sources');
-        console.log('  thoth import_knowledge <path>     Import knowledge sources');
-        console.log('  thoth import_publications <path>  Import publication sources');
-        console.log('  thoth generate_profile            Generate identity profiles');
-        console.log('  thoth research "<topic>"          Research a topic using your knowledge');
-        console.log('  thoth generate_article --topic    Generate an article in your voice');
-        console.log('  thoth create_series <name>        Group articles into series');
+        ui.nextSteps([
+          'thoth import_voice <path>         Import voice sources',
+          'thoth import_knowledge <path>     Import knowledge sources',
+          'thoth import_publications <path>  Import publication sources',
+          'thoth generate_profile            Generate identity profiles',
+          'thoth research "<topic>"          Research a topic using your knowledge',
+          'thoth generate_article --topic    Generate an article in your voice',
+          'thoth create_series <name>        Group articles into series',
+        ]);
 
         db.close();
       } catch (error) {
         logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Init failed');
-        console.error('Init failed:', error instanceof Error ? error.message : error);
+        ui.error(`Init failed: ${error instanceof Error ? error.message : String(error)}`);
         process.exit(1);
       }
     });

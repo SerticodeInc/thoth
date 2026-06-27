@@ -67,17 +67,24 @@ export class SqliteResearchRepository implements ResearchRepository {
   }
 
   saveResearchEmbedding(researchId: string, embedding: number[], model: string): Promise<Result<void>> {
-    const insertVec = this.db.prepare('INSERT INTO vec_research (embedding) VALUES (?)');
-    const insertEmb = this.db.prepare(
-      'INSERT INTO research_embeddings (research_id, model) VALUES (?, ?)',
-    );
+    try {
+      const insertVec = this.db.prepare('INSERT INTO vec_research (embedding) VALUES (?)');
+      const insertEmb = this.db.prepare(
+        'INSERT INTO research_embeddings (research_id, model) VALUES (?, ?)',
+      );
 
-    const doInsert = this.db.transaction(() => {
-      insertVec.run(new Float32Array(embedding));
-      insertEmb.run(researchId, model);
-    });
+      const doInsert = this.db.transaction(() => {
+        insertVec.run(new Float32Array(embedding));
+        insertEmb.run(researchId, model);
+      });
 
-    doInsert();
-    return Promise.resolve({ ok: true, value: undefined });
+      doInsert();
+      return Promise.resolve({ ok: true, value: undefined });
+    } catch (error) {
+      return Promise.resolve({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }

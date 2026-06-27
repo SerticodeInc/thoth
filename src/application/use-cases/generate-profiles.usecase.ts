@@ -54,6 +54,69 @@ Return ONLY valid JSON with this exact structure:
   "summary": "A 2-3 sentence summary of their publication patterns"
 }`;
 
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function extractJsonObject(value: string): string | null {
+  const fencedMatch = /```(?:json)?\s*([\s\S]*?)```/i.exec(value);
+  const candidate = fencedMatch?.[1]?.trim() ?? value.trim();
+  const start = candidate.indexOf('{');
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < candidate.length; index += 1) {
+    const char = candidate[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === '{') depth += 1;
+    if (char === '}') depth -= 1;
+
+    if (depth === 0) {
+      return candidate.slice(start, index + 1);
+    }
+  }
+
+  return null;
+}
+
+function parseJsonRecord(value: string): Result<Record<string, unknown>> {
+  const json = extractJsonObject(value);
+  if (json === null) return { ok: false, error: 'No JSON object found in AI response' };
+
+  try {
+    const parsed: unknown = JSON.parse(json);
+    if (!isJsonRecord(parsed)) {
+      return { ok: false, error: 'AI response JSON was not an object' };
+    }
+    return { ok: true, value: parsed };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'AI response JSON could not be parsed',
+    };
+  }
+}
+
 export class GenerateProfilesUseCase {
   constructor(
     private readonly ai: AiService,
@@ -101,22 +164,19 @@ export class GenerateProfilesUseCase {
     );
 
     const chatResult = await this.ai.chat({
-      systemPrompt,
+      systemPrompt: `${systemPrompt}\n\nDo not include markdown fences, commentary, or any text outside the JSON object.`,
       userPrompt: `Here are the ${typeLabel} samples:\n\n${truncated}`,
+      responseFormat: 'json',
       temperature: 0.3,
     });
 
     if (!chatResult.ok) return { ok: false, error: chatResult.error };
 
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(chatResult.value) as Record<string, unknown>;
-    } catch {
-      return { ok: false, error: `Invalid JSON response for ${label}` };
-    }
+    const parsed = parseJsonRecord(chatResult.value);
+    if (!parsed.ok) return { ok: false, error: `Invalid JSON response for ${label}: ${parsed.error}` };
 
     const schema = this.getSchema(type);
-    const validated = schema.safeParse(parsed);
+    const validated = schema.safeParse(parsed.value);
     if (!validated.success) {
       this.logger.error({ error: validated.error.message }, `${label} AI response validation failed`);
       return { ok: false, error: `Invalid AI response for ${label}: ${validated.error.message}` };

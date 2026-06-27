@@ -12,7 +12,7 @@ export interface ProviderConfig {
 
 const DEFAULTS = {
   ollamaBaseURL: 'http://localhost:11434/v1',
-  ollamaChat: 'llama3.2',
+  ollamaChat: 'llama3.2:1b',
   ollamaEmbed: 'nomic-embed-text',
   geminiChat: 'gemini-1.5-flash',
   geminiEmbed: 'text-embedding-004',
@@ -21,6 +21,18 @@ const DEFAULTS = {
   openaiEmbed: 'text-embedding-3-small',
   anthropicChat: 'claude-sonnet-4-20250514',
 };
+
+function isSelectedProvider(provider: string): boolean {
+  return process.env.THOTH_PROVIDER === provider || (provider === 'ollama' && process.env.THOTH_LOCAL === 'true');
+}
+
+function chatModel(provider: string, providerSpecific: string | undefined, fallback: string): string {
+  return providerSpecific ?? (isSelectedProvider(provider) ? process.env.THOTH_CHAT_MODEL : undefined) ?? fallback;
+}
+
+function embeddingModel(provider: string, providerSpecific: string | undefined, fallback: string): string {
+  return providerSpecific ?? (isSelectedProvider(provider) ? process.env.THOTH_EMBEDDING_MODEL : undefined) ?? fallback;
+}
 
 export function getChatProviders(): ProviderConfig[] {
   const providers: ProviderConfig[] = [];
@@ -35,9 +47,9 @@ export function getChatProviders(): ProviderConfig[] {
       kind: 'openai-compatible',
       baseURL: 'https://api.openai.com/v1',
       apiKey: process.env.OPENAI_API_KEY,
-      chatModel: process.env.OPENAI_CHAT_MODEL ?? DEFAULTS.openaiChat,
+      chatModel: chatModel('openai', process.env.OPENAI_CHAT_MODEL, DEFAULTS.openaiChat),
       supportsEmbeddings: true,
-      embeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? DEFAULTS.openaiEmbed,
+      embeddingModel: embeddingModel('openai', process.env.OPENAI_EMBEDDING_MODEL, DEFAULTS.openaiEmbed),
     });
   }
 
@@ -49,7 +61,7 @@ export function getChatProviders(): ProviderConfig[] {
       kind: 'openai-compatible',
       baseURL: 'https://api.groq.com/openai/v1',
       apiKey: process.env.GROQ_API_KEY,
-      chatModel: process.env.GROQ_CHAT_MODEL ?? DEFAULTS.groqChat,
+      chatModel: chatModel('groq', process.env.GROQ_CHAT_MODEL, DEFAULTS.groqChat),
       supportsEmbeddings: false,
     });
   }
@@ -62,9 +74,9 @@ export function getChatProviders(): ProviderConfig[] {
       kind: 'openai-compatible',
       baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
       apiKey: process.env.GEMINI_API_KEY,
-      chatModel: process.env.GEMINI_CHAT_MODEL ?? DEFAULTS.geminiChat,
+      chatModel: chatModel('gemini', process.env.GEMINI_CHAT_MODEL, DEFAULTS.geminiChat),
       supportsEmbeddings: true,
-      embeddingModel: process.env.GEMINI_EMBEDDING_MODEL ?? DEFAULTS.geminiEmbed,
+      embeddingModel: embeddingModel('gemini', process.env.GEMINI_EMBEDDING_MODEL, DEFAULTS.geminiEmbed),
     });
   }
 
@@ -76,7 +88,7 @@ export function getChatProviders(): ProviderConfig[] {
       kind: 'anthropic',
       baseURL: 'https://api.anthropic.com/v1',
       apiKey: process.env.ANTHROPIC_API_KEY,
-      chatModel: process.env.ANTHROPIC_CHAT_MODEL ?? DEFAULTS.anthropicChat,
+      chatModel: chatModel('anthropic', process.env.ANTHROPIC_CHAT_MODEL, DEFAULTS.anthropicChat),
       supportsEmbeddings: false,
     });
   }
@@ -88,9 +100,9 @@ export function getChatProviders(): ProviderConfig[] {
       name: 'Ollama',
       kind: 'openai-compatible',
       baseURL: process.env.OLLAMA_BASE_URL ?? DEFAULTS.ollamaBaseURL,
-      chatModel: process.env.OLLAMA_CHAT_MODEL ?? DEFAULTS.ollamaChat,
+      chatModel: chatModel('ollama', process.env.OLLAMA_CHAT_MODEL, DEFAULTS.ollamaChat),
       supportsEmbeddings: true,
-      embeddingModel: process.env.OLLAMA_EMBEDDING_MODEL ?? DEFAULTS.ollamaEmbed,
+      embeddingModel: embeddingModel('ollama', process.env.OLLAMA_EMBEDDING_MODEL, DEFAULTS.ollamaEmbed),
     });
   }
 

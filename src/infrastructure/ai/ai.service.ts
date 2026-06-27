@@ -27,6 +27,21 @@ function buildProviderListError(operation: string): string {
   return `No AI provider available for ${operation}. Set OPENAI_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, ANTHROPIC_API_KEY, or start Ollama on localhost:11434.`;
 }
 
+function parseTimeoutMs(value: string | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
+
+function defaultChatTimeoutMs(provider: ProviderConfig): number {
+  return provider.name === 'Ollama' ? 180_000 : 30_000;
+}
+
+function defaultEmbeddingTimeoutMs(provider: ProviderConfig): number {
+  return provider.name === 'Ollama' ? 60_000 : 15_000;
+}
+
 async function chatWithOpenAiCompatible(
   config: ProviderConfig,
   params: ChatParams,
@@ -41,6 +56,7 @@ async function chatWithOpenAiCompatible(
         { role: 'user', content: params.userPrompt },
       ],
       temperature: params.temperature ?? 0.7,
+      ...(params.responseFormat === 'json' ? { response_format: { type: 'json_object' as const } } : {}),
     },
     { signal },
   );
@@ -84,16 +100,17 @@ export class OpenAiAiService implements AiService {
     const MAX_RETRIES = 3;
 
     for (const provider of providers) {
+      const timeoutMs = parseTimeoutMs(process.env.THOTH_CHAT_TIMEOUT_MS, defaultChatTimeoutMs(provider));
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-          logger.debug({ provider: provider.name, attempt }, 'Attempting chat completion');
+          logger.debug({ provider: provider.name, attempt, timeoutMs }, 'Attempting chat completion');
 
           const content = await withTimeout(async (signal) => {
             if (provider.kind === 'anthropic') {
               return chatWithAnthropic(provider, params, signal);
             }
             return chatWithOpenAiCompatible(provider, params, signal);
-          }, 30_000);
+          }, timeoutMs);
 
           if (content) {
             logger.info({ provider: provider.name }, 'Chat completed');
@@ -133,10 +150,11 @@ export class OpenAiAiService implements AiService {
     for (const provider of providers) {
       if (!provider.embeddingModel) continue;
       const model = provider.embeddingModel;
+      const timeoutMs = parseTimeoutMs(process.env.THOTH_EMBEDDING_TIMEOUT_MS, defaultEmbeddingTimeoutMs(provider));
 
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-          logger.debug({ provider: provider.name, attempt, textLength: text.length }, 'Attempting embedding');
+          logger.debug({ provider: provider.name, attempt, textLength: text.length, timeoutMs }, 'Attempting embedding');
 
           const client = createClient(provider);
           const response = await withTimeout(
@@ -148,7 +166,7 @@ export class OpenAiAiService implements AiService {
                 },
                 { signal },
               ),
-            15_000,
+            timeoutMs,
           );
 
           const embedding = response.data[0]?.embedding;

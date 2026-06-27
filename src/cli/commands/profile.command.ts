@@ -34,13 +34,17 @@ export function registerProfileCommand(program: Command): void {
         }
 
         console.log('Generating identity profiles...');
+        let generatedCount = 0;
+        const failures: string[] = [];
 
         if (counts.voice > 0) {
           console.log('  Generating voice profile...');
           const result = await useCase.generateVoiceProfile();
           if (!result.ok) {
             console.error(`  Voice profile failed: ${result.error}`);
+            failures.push(`voice: ${result.error}`);
           } else {
+            generatedCount += 1;
             console.log(`  Voice profile: ${result.value.id}`);
             console.log(`    Summary: ${result.value.summary}`);
           }
@@ -51,7 +55,9 @@ export function registerProfileCommand(program: Command): void {
           const result = await useCase.generateKnowledgeProfile();
           if (!result.ok) {
             console.error(`  Knowledge profile failed: ${result.error}`);
+            failures.push(`knowledge: ${result.error}`);
           } else {
+            generatedCount += 1;
             console.log(`  Knowledge profile: ${result.value.id}`);
             console.log(`    Domains: ${result.value.domains.join(', ')}`);
           }
@@ -62,13 +68,25 @@ export function registerProfileCommand(program: Command): void {
           const result = await useCase.generatePublicationProfile();
           if (!result.ok) {
             console.error(`  Publication profile failed: ${result.error}`);
+            failures.push(`publication: ${result.error}`);
           } else {
+            generatedCount += 1;
             console.log(`  Publication profile: ${result.value.id}`);
             console.log(`    Themes: ${result.value.themes.join(', ')}`);
           }
         }
 
         console.log();
+        if (failures.length > 0) {
+          console.error(
+            generatedCount > 0
+              ? `Profile generation completed with ${failures.length} failure(s).`
+              : 'Profile generation failed.',
+          );
+          db.close();
+          process.exit(1);
+        }
+
         console.log('Identity profiles generated successfully.');
 
         db.close();

@@ -21,30 +21,34 @@ export class SqliteSourceRepository implements SourceRepository {
   }
 
   searchByVector(embedding: number[], k: number): Result<VectorSearchResult[]> {
-    const rows = this.db
-      .prepare(
-        `SELECT v.rowid, s.id, s.source_path, s.content, v.distance
-         FROM vec_sources v
-         JOIN sources s ON v.rowid = s.rowid
-         WHERE v.embedding MATCH ? AND k = ?
-         ORDER BY v.distance`,
-      )
-      .all(new Float32Array(embedding), k) as Array<{
-      rowid: number;
-      id: string;
-      source_path: string;
-      content: string;
-      distance: number;
-    }>;
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT v.rowid, s.id, s.source_path, s.content, v.distance
+           FROM vec_sources v
+           JOIN sources s ON v.rowid = s.rowid
+           WHERE v.embedding MATCH ? AND k = ?
+           ORDER BY v.distance`,
+        )
+        .all(new Float32Array(embedding), k) as Array<{
+        rowid: number;
+        id: string;
+        source_path: string;
+        content: string;
+        distance: number;
+      }>;
 
-    const results: VectorSearchResult[] = rows.map((r) => ({
-      id: r.id,
-      sourcePath: r.source_path,
-      content: r.content,
-      distance: r.distance,
-    }));
+      const results: VectorSearchResult[] = rows.map((r) => ({
+        id: r.id,
+        sourcePath: r.source_path,
+        content: r.content,
+        distance: r.distance,
+      }));
 
-    return { ok: true, value: results };
+      return { ok: true, value: results };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   isAlreadyImported(sourcePath: string, checksum: string): Result<boolean> {
@@ -70,17 +74,21 @@ export class SqliteSourceRepository implements SourceRepository {
   }
 
   saveSourceEmbedding(sourceId: string, embedding: number[], model: string): Result<void> {
-    const insertVec = this.db.prepare('INSERT INTO vec_sources (embedding) VALUES (?)');
-    const insertEmb = this.db.prepare(
-      'INSERT INTO source_embeddings (source_id, model) VALUES (?, ?)',
-    );
+    try {
+      const insertVec = this.db.prepare('INSERT INTO vec_sources (embedding) VALUES (?)');
+      const insertEmb = this.db.prepare(
+        'INSERT INTO source_embeddings (source_id, model) VALUES (?, ?)',
+      );
 
-    const doInsert = this.db.transaction(() => {
-      insertVec.run(new Float32Array(embedding));
-      insertEmb.run(sourceId, model);
-    });
+      const doInsert = this.db.transaction(() => {
+        insertVec.run(new Float32Array(embedding));
+        insertEmb.run(sourceId, model);
+      });
 
-    doInsert();
-    return { ok: true, value: undefined };
+      doInsert();
+      return { ok: true, value: undefined };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 }
