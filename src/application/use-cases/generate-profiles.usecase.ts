@@ -1,18 +1,19 @@
-import { randomUUID } from 'crypto';
-import type Database from 'better-sqlite3';
-import { ZodError } from 'zod';
+import { randomUUID } from 'node:crypto';
+import type { AiService } from '../../domain/repositories/ai-service.ts';
 import type { VoiceProfile } from '../../domain/entities/voice-profile.ts';
 import type { KnowledgeProfile } from '../../domain/entities/knowledge-profile.ts';
 import type { PublicationProfile } from '../../domain/entities/publication-profile.ts';
-import { getSourcesByType } from '../../infrastructure/persistence/repositories/source-repository.ts';
-import { SqliteProfileRepository } from '../../infrastructure/persistence/repositories/sqlite-profile-repository.ts';
-import { chat, generateEmbedding } from '../../infrastructure/ai/ai.service.ts';
-import { logger } from '../../infrastructure/logging/logger.ts';
+import type { SourceType } from '../../domain/entities/source-reference.ts';
+import type { ProfileRepository } from '../../domain/repositories/profile-repository.ts';
+import type { SourceRepository } from '../../domain/repositories/source-repository.ts';
+import type { Result } from '../../domain/entities/result.ts';
+import type { LoggerPort } from '../ports/logger.ts';
 import {
   voiceProfileResponseSchema,
   knowledgeProfileResponseSchema,
   publicationProfileResponseSchema,
 } from './profile-schemas.ts';
+import { parseJsonRecord } from './parse-ai-json.ts';
 
 const VOICE_PROMPT = `You are analyzing a person's writing to build a Voice Profile.
 
@@ -55,166 +56,136 @@ Return ONLY valid JSON with this exact structure:
 }`;
 
 export class GenerateProfilesUseCase {
-  constructor(private readonly db: Database.Database) {}
+  constructor(
+    private readonly ai: AiService,
+    private readonly profileRepo: ProfileRepository,
+    private readonly sourceRepo: SourceRepository,
+    private readonly logger: LoggerPort,
+  ) {}
 
-  async generateVoiceProfile(): Promise<VoiceProfile> {
-    const sources = getSourcesByType(this.db, 'voice');
+  generateVoiceProfile(): Promise<Result<VoiceProfile>> {
+    return this.generateProfile('voice', VOICE_PROMPT, 'voice profile');
+  }
+
+  generateKnowledgeProfile(): Promise<Result<KnowledgeProfile>> {
+    return this.generateProfile('knowledge', KNOWLEDGE_PROMPT, 'knowledge profile');
+  }
+
+  generatePublicationProfile(): Promise<Result<PublicationProfile>> {
+    return this.generateProfile('publication', PUBLICATION_PROMPT, 'publication profile');
+  }
+
+  private async generateProfile<T extends VoiceProfile | KnowledgeProfile | PublicationProfile>(
+    type: SourceType,
+    systemPrompt: string,
+    label: string,
+  ): Promise<Result<T>> {
+    const typeLabel = type === 'publication' ? 'publication' : type;
+
+    const sourcesResult = await this.sourceRepo.getSourcesByType(type);
+    if (!sourcesResult.ok) return { ok: false, error: sourcesResult.error };
+    const sources = sourcesResult.value;
+
     if (sources.length === 0) {
-      throw new Error('No voice sources imported. Run `thoth import voice <path>` first.');
+      return {
+        ok: false,
+        error: `No ${typeLabel} sources imported. Run \`thoth import ${typeLabel} <path>\` first.`,
+      };
     }
 
     const combined = sources.map((s) => s.content).join('\n\n---\n\n');
     const truncated = combined.length > 32000 ? combined.slice(0, 32000) : combined;
 
-    logger.info(
+    this.logger.info(
       { sampleCount: sources.length, totalChars: combined.length },
-      'Generating voice profile',
+      `Generating ${typeLabel} profile`,
     );
 
-    const response = await chat({
-      systemPrompt: VOICE_PROMPT,
-      userPrompt: `Here are the writing samples:\n\n${truncated}`,
+    const chatResult = await this.ai.chat({
+      systemPrompt: `${systemPrompt}\n\nDo not include markdown fences, commentary, or any text outside the JSON object.`,
+      userPrompt: `Here are the ${typeLabel} samples:\n\n${truncated}`,
+      responseFormat: 'json',
       temperature: 0.3,
     });
 
-    let parsed: { traits: VoiceProfile['traits']; summary: string };
-    try {
-      parsed = voiceProfileResponseSchema.parse(JSON.parse(response));
-    } catch (error) {
-      const message = error instanceof ZodError ? error.message : 'Failed to parse AI response';
-      logger.error({ error: message }, 'Voice profile AI response validation failed');
-      throw new Error(`Invalid AI response for voice profile: ${message}`);
+    if (!chatResult.ok) return { ok: false, error: chatResult.error };
+
+    const parsed = parseJsonRecord(chatResult.value);
+    if (!parsed.ok) return { ok: false, error: `Invalid JSON response for ${label}: ${parsed.error}` };
+
+    const schema = this.getSchema(type);
+    const validated = schema.safeParse(parsed.value);
+    if (!validated.success) {
+      this.logger.error({ error: validated.error.message }, `${label} AI response validation failed`);
+      return { ok: false, error: `Invalid AI response for ${label}: ${validated.error.message}` };
     }
 
-    const profile: VoiceProfile = {
-      id: randomUUID(),
-      name: null,
-      traits: parsed.traits,
-      summary: parsed.summary,
-      createdAt: new Date(),
-    };
+    const profile = this.buildProfile(type, validated.data);
+    const saveResult = await this.saveProfile(type, profile);
+    if (!saveResult.ok) {
+      return { ok: false, error: saveResult.error };
+    }
 
-    const repo = new SqliteProfileRepository(this.db);
-    await repo.saveVoiceProfile(profile);
-
-    await this.storeProfileEmbedding(profile.id, 'voice', JSON.stringify(parsed.traits));
-
-    logger.info({ profileId: profile.id }, 'Voice profile generated');
-    return profile;
-  }
-
-  async generateKnowledgeProfile(): Promise<KnowledgeProfile> {
-    const sources = getSourcesByType(this.db, 'knowledge');
-    if (sources.length === 0) {
-      throw new Error(
-        'No knowledge sources imported. Run `thoth import knowledge <path>` first.',
+    const embedResult = await this.ai.generateEmbedding(JSON.stringify(validated.data));
+    if (embedResult.ok) {
+      const embResult = await this.profileRepo.saveProfileEmbedding(
+        profile.id,
+        type,
+        embedResult.value,
+        this.ai.getActiveEmbeddingModel(),
       );
+      if (!embResult.ok) {
+        this.logger.warn({ error: embResult.error }, 'Embedding save failed for profile');
+      }
+    } else {
+      this.logger.warn({ error: embedResult.error }, 'Embedding generation failed for profile');
     }
 
-    const combined = sources.map((s) => s.content).join('\n\n---\n\n');
-    const truncated = combined.length > 32000 ? combined.slice(0, 32000) : combined;
-
-    logger.info({ sampleCount: sources.length }, 'Generating knowledge profile');
-
-    const response = await chat({
-      systemPrompt: KNOWLEDGE_PROMPT,
-      userPrompt: `Here are the knowledge samples:\n\n${truncated}`,
-      temperature: 0.3,
-    });
-
-    let parsed: { domains: string[]; topics: string[]; summary: string };
-    try {
-      parsed = knowledgeProfileResponseSchema.parse(JSON.parse(response));
-    } catch (error) {
-      const message = error instanceof ZodError ? error.message : 'Failed to parse AI response';
-      logger.error({ error: message }, 'Knowledge profile AI response validation failed');
-      throw new Error(`Invalid AI response for knowledge profile: ${message}`);
-    }
-
-    const profile: KnowledgeProfile = {
-      id: randomUUID(),
-      domains: parsed.domains,
-      topics: parsed.topics,
-      summary: parsed.summary,
-      createdAt: new Date(),
-    };
-
-    const repo = new SqliteProfileRepository(this.db);
-    await repo.saveKnowledgeProfile(profile);
-
-    await this.storeProfileEmbedding(
-      profile.id,
-      'knowledge',
-      JSON.stringify({ domains: parsed.domains, topics: parsed.topics }),
-    );
-
-    logger.info({ profileId: profile.id }, 'Knowledge profile generated');
-    return profile;
+    this.logger.info({ profileId: profile.id }, `${label} generated`);
+    return { ok: true, value: profile as T };
   }
 
-  async generatePublicationProfile(): Promise<PublicationProfile> {
-    const sources = getSourcesByType(this.db, 'publication');
-    if (sources.length === 0) {
-      throw new Error(
-        'No publication sources imported. Run `thoth import publications <path>` first.',
-      );
+  private getSchema(type: SourceType) {
+    switch (type) {
+      case 'voice': return voiceProfileResponseSchema;
+      case 'knowledge': return knowledgeProfileResponseSchema;
+      case 'publication': return publicationProfileResponseSchema;
     }
-
-    const combined = sources.map((s) => s.content).join('\n\n---\n\n');
-    const truncated = combined.length > 32000 ? combined.slice(0, 32000) : combined;
-
-    logger.info({ sampleCount: sources.length }, 'Generating publication profile');
-
-    const response = await chat({
-      systemPrompt: PUBLICATION_PROMPT,
-      userPrompt: `Here are the publication samples:\n\n${truncated}`,
-      temperature: 0.3,
-    });
-
-    let parsed: { themes: string[]; summary: string };
-    try {
-      parsed = publicationProfileResponseSchema.parse(JSON.parse(response));
-    } catch (error) {
-      const message = error instanceof ZodError ? error.message : 'Failed to parse AI response';
-      logger.error({ error: message }, 'Publication profile AI response validation failed');
-      throw new Error(`Invalid AI response for publication profile: ${message}`);
-    }
-
-    const profile: PublicationProfile = {
-      id: randomUUID(),
-      themes: parsed.themes,
-      series: null,
-      summary: parsed.summary,
-      createdAt: new Date(),
-    };
-
-    const repo = new SqliteProfileRepository(this.db);
-    await repo.savePublicationProfile(profile);
-
-    await this.storeProfileEmbedding(
-      profile.id,
-      'publication',
-      JSON.stringify({ themes: parsed.themes }),
-    );
-
-    logger.info({ profileId: profile.id }, 'Publication profile generated');
-    return profile;
   }
 
-  private async storeProfileEmbedding(
-    profileId: string,
-    profileType: string,
-    text: string,
-  ): Promise<void> {
-    const embedding = await generateEmbedding(text);
-    this.db
-      .prepare('INSERT INTO vec_profiles (embedding) VALUES (?)')
-      .run(new Float32Array(embedding));
-    const rowId = (this.db.prepare('SELECT last_insert_rowid() as id').get() as { id: number }).id;
-    this.db
-      .prepare(
-        'INSERT INTO profile_embeddings (id, profile_id, profile_type, model) VALUES (?, ?, ?, ?)',
-      )
-      .run(rowId, profileId, profileType, 'text-embedding-3-small');
+  private buildProfile(
+    type: SourceType,
+    data: Record<string, unknown>,
+  ): VoiceProfile | KnowledgeProfile | PublicationProfile {
+    const id = randomUUID();
+    const createdAt = new Date();
+    switch (type) {
+      case 'voice': {
+        const { traits, summary } = voiceProfileResponseSchema.parse(data);
+        return { id, name: null, traits, summary, createdAt };
+      }
+      case 'knowledge': {
+        const { domains, topics, summary } = knowledgeProfileResponseSchema.parse(data);
+        return { id, domains, topics, summary, createdAt };
+      }
+      case 'publication': {
+        const { themes, summary } = publicationProfileResponseSchema.parse(data);
+        return { id, themes, series: null, summary, createdAt };
+      }
+    }
+  }
+
+  private async saveProfile(
+    type: SourceType,
+    profile: VoiceProfile | KnowledgeProfile | PublicationProfile,
+  ): Promise<Result<VoiceProfile | KnowledgeProfile | PublicationProfile>> {
+    switch (type) {
+      case 'voice':
+        return this.profileRepo.saveVoiceProfile(profile as VoiceProfile);
+      case 'knowledge':
+        return this.profileRepo.saveKnowledgeProfile(profile as KnowledgeProfile);
+      case 'publication':
+        return this.profileRepo.savePublicationProfile(profile as PublicationProfile);
+    }
   }
 }

@@ -1,36 +1,46 @@
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
-import { homedir } from 'os';
-import { join } from 'path';
-import { mkdirSync, readFileSync, readdirSync, chmodSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, resolve } from 'path';
+import { join, dirname } from 'node:path';
+import { homedir } from 'node:os';
+import { mkdirSync, chmodSync } from 'node:fs';
 import { logger } from '../logging/logger.ts';
 import { sanitizePath } from '../logging/path-utils.ts';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const DB_PATH = process.env.THOTH_DB_PATH ?? join(homedir(), '.thoth', 'thoth.db');
+import { MIGRATION_001 } from './migrations/001_initial.ts';
+import { MIGRATION_002 } from './migrations/002_research.ts';
+import { MIGRATION_003 } from './migrations/003_articles.ts';
+import { MIGRATION_004 } from './migrations/004_series.ts';
+import { MIGRATION_005 } from './migrations/005_import_log.ts';
+import { MIGRATION_006 } from './migrations/006_vectors_per_provider.ts';
 
 let db: Database.Database | null = null;
+let cachedDbPath: string | null = null;
+
+export function setDbPath(path: string) {
+  cachedDbPath = path;
+}
+
+function resolveDbPath(): string {
+  if (cachedDbPath) return cachedDbPath;
+  return process.env.THOTH_DB_PATH ?? join(homedir(), '.thoth', 'thoth.db');
+}
 
 export function getDatabase(): Database.Database {
   if (db) return db;
 
-  const dbDir = dirname(DB_PATH);
+  const dbPath = resolveDbPath();
+  const dbDir = dirname(dbPath);
   mkdirSync(dbDir, { recursive: true });
 
-  logger.info({ path: sanitizePath(DB_PATH) }, 'Opening database');
+  logger.info({ path: sanitizePath(dbPath) }, 'Opening database');
 
-  db = new Database(DB_PATH);
+  db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
   try {
-    chmodSync(DB_PATH, 0o600);
+    chmodSync(dbPath, 0o600);
   } catch {
-    logger.warn({ path: sanitizePath(DB_PATH) }, 'Could not set database file permissions');
+    logger.warn({ path: sanitizePath(dbPath) }, 'Could not set database file permissions');
   }
 
   sqliteVec.load(db);
@@ -45,22 +55,27 @@ function runMigrations(db: Database.Database): void {
     "CREATE TABLE IF NOT EXISTS _migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT (datetime('now')))",
   );
 
-  const rows = db.prepare('SELECT name FROM _migrations').all() as Array<Record<string, unknown>>;
-  const applied = new Set(rows.map((r) => r.name as string));
+  const migrations: Array<{ name: string; sql: string }> = [
+    { name: '001_initial.sql', sql: MIGRATION_001 },
+    { name: '002_research.sql', sql: MIGRATION_002 },
+    { name: '003_articles.sql', sql: MIGRATION_003 },
+    { name: '004_series.sql', sql: MIGRATION_004 },
+    { name: '005_import_log.sql', sql: MIGRATION_005 },
+    { name: '006_vectors_per_provider.sql', sql: MIGRATION_006 },
+  ];
 
-  const migrationsDir = resolve(__dirname, 'migrations');
-  const files = readdirSync(migrationsDir).sort();
+  for (const migration of migrations) {
+    const applied = db.prepare('SELECT 1 FROM _migrations WHERE name = ?').get(migration.name);
+    if (applied) continue;
 
-  for (const file of files) {
-    if (!file.endsWith('.sql')) continue;
-    if (applied.has(file)) continue;
+    const applyMigration = db.transaction(() => {
+      db.exec(migration.sql);
+      db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration.name);
+    });
 
-    const sql = readFileSync(join(migrationsDir, file), 'utf-8');
+    applyMigration();
 
-    db.exec(sql);
-    db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(file);
-
-    logger.info({ migration: file }, 'Applied migration');
+    logger.info({ migration: migration.name }, 'Applied migration');
   }
 }
 

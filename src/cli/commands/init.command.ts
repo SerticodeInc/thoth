@@ -1,22 +1,29 @@
 import type { Command } from 'commander';
-import { getDatabase } from '../../infrastructure/persistence/database.ts';
 import { logger } from '../../infrastructure/logging/logger.ts';
-import { getSourceCountByType } from '../../infrastructure/persistence/repositories/source-repository.ts';
+import { createSourceRepository, closeDb } from '../../infrastructure/composition-root.ts';
+import { withCliError } from '../error-handler.ts';
+import * as ui from '../ui.ts';
 
 export function registerInitCommand(program: Command): void {
   program
     .command('init')
     .description('Initialize Thoth — create database and run migrations')
-    .action(() => {
-      try {
+    .action(async () => {
+      await withCliError(logger, 'Init', async () => {
         logger.info('Initializing Thoth');
 
-        const db = getDatabase();
+        const sourceRepo = createSourceRepository();
+
+        const [voiceCount, knowledgeCount, pubCount] = await Promise.all([
+          sourceRepo.getSourceCountByType('voice'),
+          sourceRepo.getSourceCountByType('knowledge'),
+          sourceRepo.getSourceCountByType('publication'),
+        ]);
 
         const counts = {
-          voice: getSourceCountByType(db, 'voice'),
-          knowledge: getSourceCountByType(db, 'knowledge'),
-          publication: getSourceCountByType(db, 'publication'),
+          voice: voiceCount.ok ? voiceCount.value : 0,
+          knowledge: knowledgeCount.ok ? knowledgeCount.value : 0,
+          publication: pubCount.ok ? pubCount.value : 0,
         };
 
         logger.info(
@@ -24,35 +31,34 @@ export function registerInitCommand(program: Command): void {
           'Thoth initialized successfully',
         );
 
-        console.log('Thoth initialized.');
-        console.log(`  Database: ~/.thoth/thoth.db`);
-        console.log(
-          `  Sources: ${counts.voice} voice, ${counts.knowledge} knowledge, ${counts.publication} publication`,
+        ui.success('Thoth initialized.');
+        ui.meta('Database', '~/.thoth/thoth.db');
+        ui.meta(
+          'Sources',
+          `${counts.voice} voice, ${counts.knowledge} knowledge, ${counts.publication} publication`,
         );
-        console.log();
+        ui.blank();
 
         const isLocal = process.env.THOTH_LOCAL === 'true';
         if (!isLocal) {
-          console.log('Privacy notice:');
-          console.log(
-            '  Thoth sends source content to external AI providers (OpenAI, Groq, Gemini)',
-          );
-          console.log('  for profile generation and embedding.');
-          console.log('  Run with --local to use only local AI (Ollama) and keep data on-device.');
-          console.log();
+          ui.section('Privacy notice');
+          ui.warn('  Thoth sends source content to external AI providers (OpenAI, Groq, Gemini)');
+          ui.warn('  for profile generation and embedding.');
+          ui.info('Run with --local to use only local AI (Ollama) and keep data on device.');
+          ui.blank();
         }
 
-        console.log('Next steps:');
-        console.log('  thoth import voice <path>        Import voice sources');
-        console.log('  thoth import knowledge <path>    Import knowledge sources');
-        console.log('  thoth import publications <path> Import publication sources');
-        console.log('  thoth profile generate           Generate identity profiles');
+        ui.nextSteps([
+          'thoth import_voice <path>         Import voice sources',
+          'thoth import_knowledge <path>     Import knowledge sources',
+          'thoth import_publications <path>  Import publication sources',
+          'thoth generate_profile            Generate identity profiles',
+          'thoth research "<topic>"          Research a topic using your knowledge',
+          'thoth generate_article --topic    Generate an article in your voice',
+          'thoth create_series <name>        Group articles into series',
+        ]);
 
-        db.close();
-      } catch (error) {
-        logger.error({ error }, 'Init failed');
-        console.error('Init failed:', error instanceof Error ? error.message : error);
-        process.exit(1);
-      }
+        closeDb();
+      });
     });
 }

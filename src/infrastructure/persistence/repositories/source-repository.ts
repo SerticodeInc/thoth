@@ -1,5 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { SourceReference } from '../../../domain/entities/source-reference.ts';
+import type { Result } from '../../../domain/entities/result.ts';
+import { sourceReferenceSchema } from './source-schemas.ts';
 
 export function saveSources(db: Database.Database, sources: SourceReference[]): void {
   const insert = db.prepare(
@@ -24,20 +26,21 @@ export function saveSources(db: Database.Database, sources: SourceReference[]): 
   insertMany(sources);
 }
 
-export function getSourcesByType(db: Database.Database, type: string): SourceReference[] {
+export function getSourcesByType(db: Database.Database, type: string): Result<SourceReference[]> {
   const rows = db
     .prepare('SELECT * FROM sources WHERE type = ? ORDER BY created_at')
     .all(type) as Array<Record<string, unknown>>;
 
-  return rows.map((row) => ({
-    id: row.id as string,
-    type: row.type as SourceReference['type'],
-    sourcePath: row.source_path as string,
-    content: row.content as string,
-    checksum: row.checksum as string,
-    chunkIndex: row.chunk_index as number,
-    createdAt: new Date(row.created_at as string),
-  }));
+  const mapped: SourceReference[] = [];
+  for (const row of rows) {
+    const parsed = sourceReferenceSchema.safeParse(row);
+    if (!parsed.success) {
+      return { ok: false, error: `Invalid source row: ${parsed.error.message}` };
+    }
+    mapped.push(parsed.data);
+  }
+
+  return { ok: true, value: mapped };
 }
 
 export function getSourceCountByType(db: Database.Database, type: string): number {

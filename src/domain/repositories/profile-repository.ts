@@ -1,31 +1,30 @@
 import type { VoiceProfile } from '../entities/voice-profile.ts';
 import type { KnowledgeProfile } from '../entities/knowledge-profile.ts';
 import type { PublicationProfile } from '../entities/publication-profile.ts';
+import type { Result } from '../entities/result.ts';
 
 export type ProfileType = 'voice' | 'knowledge' | 'publication';
-export type ProfileEntity = VoiceProfile | KnowledgeProfile | PublicationProfile;
 
-export interface ScoredProfile {
-  readonly profile: ProfileEntity;
-  readonly distance: number;
+export interface ProfileStatus {
+  voice: { exists: true; id: string; summary: string } | { exists: false };
+  knowledge: { exists: true; id: string; domains: string } | { exists: false };
+  publication: { exists: true; id: string; themes: string } | { exists: false };
 }
 
 export interface ProfileRepository {
-  saveVoiceProfile(profile: VoiceProfile): Promise<VoiceProfile>;
-  getVoiceProfile(id: string): Promise<VoiceProfile | null>;
-  getLatestVoiceProfile(): Promise<VoiceProfile | null>;
+  saveVoiceProfile(profile: VoiceProfile): Promise<Result<VoiceProfile>>;
+  getVoiceProfile(id: string): Promise<Result<VoiceProfile | null>>;
+  getLatestVoiceProfile(): Promise<Result<VoiceProfile | null>>;
 
-  saveKnowledgeProfile(profile: KnowledgeProfile): Promise<KnowledgeProfile>;
-  getKnowledgeProfile(id: string): Promise<KnowledgeProfile | null>;
-  getLatestKnowledgeProfile(): Promise<KnowledgeProfile | null>;
+  saveKnowledgeProfile(profile: KnowledgeProfile): Promise<Result<KnowledgeProfile>>;
+  getKnowledgeProfile(id: string): Promise<Result<KnowledgeProfile | null>>;
+  getLatestKnowledgeProfile(): Promise<Result<KnowledgeProfile | null>>;
 
-  savePublicationProfile(profile: PublicationProfile): Promise<PublicationProfile>;
-  getPublicationProfile(id: string): Promise<PublicationProfile | null>;
-  getLatestPublicationProfile(): Promise<PublicationProfile | null>;
+  savePublicationProfile(profile: PublicationProfile): Promise<Result<PublicationProfile>>;
+  getPublicationProfile(id: string): Promise<Result<PublicationProfile | null>>;
+  getLatestPublicationProfile(): Promise<Result<PublicationProfile | null>>;
 
-  searchSimilarProfiles(
-    embedding: number[],
-    type: ProfileType,
-    limit?: number,
-  ): Promise<ScoredProfile[]>;
+  saveProfileEmbedding(profileId: string, type: ProfileType, embedding: number[], model: string): Promise<Result<void>>;
+
+  getProfileStatus(): Promise<Result<ProfileStatus>>;
 }
