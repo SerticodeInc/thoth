@@ -29,6 +29,6 @@ describe('AI provider configuration', () => {
     const providers = getChatProviders();
 
     expect(providers.find((provider) => provider.name === 'OpenAI')?.chatModel).toBe('gpt-4o-mini');
-    expect(providers.find((provider) => provider.name === 'Ollama')?.chatModel).toBe('llama3.2:1b');
+    expect(providers.find((provider) => provider.name === 'Ollama')?.chatModel).toBe('qwen2.5:7b');
   });
 });

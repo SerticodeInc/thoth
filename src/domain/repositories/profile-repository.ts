@@ -24,7 +24,7 @@ export interface ProfileRepository {
   getPublicationProfile(id: string): Promise<Result<PublicationProfile | null>>;
   getLatestPublicationProfile(): Promise<Result<PublicationProfile | null>>;
 
-  saveProfileEmbedding(profileId: string, type: ProfileType, embedding: number[]): Promise<Result<void>>;
+  saveProfileEmbedding(profileId: string, type: ProfileType, embedding: number[], model: string): Promise<Result<void>>;
 
   getProfileStatus(): Promise<Result<ProfileStatus>>;
 }

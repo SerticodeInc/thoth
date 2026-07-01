@@ -42,6 +42,8 @@ export class FileSourceAdapter implements FileSourcePort {
         continue;
       }
 
+      if (!resolvedPath.startsWith(resolvedDir + '/')) continue;
+
       const stat = statSync(resolvedPath);
 
       if (stat.isDirectory()) {

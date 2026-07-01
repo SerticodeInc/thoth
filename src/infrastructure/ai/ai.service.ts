@@ -138,6 +138,11 @@ export class OpenAiAiService implements AiService {
     return { ok: false, error: 'All AI providers failed to complete the chat request.' };
   }
 
+  getActiveEmbeddingModel(): string {
+    const providers = getEmbeddingProviders();
+    return providers[0]?.embeddingModel ?? 'text-embedding-3-small';
+  }
+
   async generateEmbedding(text: string): Promise<Result<number[]>> {
     const providers = getEmbeddingProviders();
 

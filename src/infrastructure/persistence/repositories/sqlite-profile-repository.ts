@@ -27,7 +27,14 @@ function parseRow(
 }
 
 export class SqliteProfileRepository implements ProfileRepository {
-  constructor(private readonly db: Database.Database) {}
+  private readonly vecTable: string;
+
+  constructor(
+    private readonly db: Database.Database,
+    embeddingTableSuffix: string = 'openai',
+  ) {
+    this.vecTable = `vec_profiles_${embeddingTableSuffix}`;
+  }
 
   saveVoiceProfile(profile: VoiceProfile): Promise<Result<VoiceProfile>> {
     return Promise.resolve(this.saveVoiceProfileSync(profile));
@@ -65,16 +72,16 @@ export class SqliteProfileRepository implements ProfileRepository {
     return Promise.resolve(this.getLatestProfileByType('publication') as Result<PublicationProfile | null>);
   }
 
-  saveProfileEmbedding(profileId: string, type: ProfileType, embedding: number[]): Promise<Result<void>> {
+  saveProfileEmbedding(profileId: string, type: ProfileType, embedding: number[], model: string): Promise<Result<void>> {
     try {
       const insertEmb = this.db.prepare(
         'INSERT INTO profile_embeddings (profile_id, profile_type, model) VALUES (?, ?, ?)',
       );
-      const insertVec = this.db.prepare('INSERT INTO vec_profiles (embedding) VALUES (?)');
+      const insertVec = this.db.prepare(`INSERT INTO ${this.vecTable} (embedding) VALUES (?)`);
 
       const doInsert = this.db.transaction(() => {
         insertVec.run(new Float32Array(embedding));
-        insertEmb.run(profileId, type, 'text-embedding-3-small');
+        insertEmb.run(profileId, type, model);
       });
 
       doInsert();

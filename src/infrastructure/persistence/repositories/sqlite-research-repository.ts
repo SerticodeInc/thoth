@@ -19,7 +19,14 @@ const researchNoteRowSchema = z.object({
 }));
 
 export class SqliteResearchRepository implements ResearchRepository {
-  constructor(private readonly db: Database.Database) {}
+  private readonly vecTable: string;
+
+  constructor(
+    private readonly db: Database.Database,
+    embeddingTableSuffix: string = 'openai',
+  ) {
+    this.vecTable = `vec_research_${embeddingTableSuffix}`;
+  }
 
   save(note: ResearchNote): Promise<Result<ResearchNote>> {
     this.db
@@ -68,7 +75,7 @@ export class SqliteResearchRepository implements ResearchRepository {
 
   saveResearchEmbedding(researchId: string, embedding: number[], model: string): Promise<Result<void>> {
     try {
-      const insertVec = this.db.prepare('INSERT INTO vec_research (embedding) VALUES (?)');
+      const insertVec = this.db.prepare(`INSERT INTO ${this.vecTable} (embedding) VALUES (?)`);
       const insertEmb = this.db.prepare(
         'INSERT INTO research_embeddings (research_id, model) VALUES (?, ?)',
       );

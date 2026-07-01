@@ -1,10 +1,6 @@
 import type { Command } from 'commander';
-import { getDatabase } from '../../infrastructure/persistence/database.ts';
 import { logger } from '../../infrastructure/logging/logger.ts';
-import { ResearchUseCase } from '../../application/use-cases/research.usecase.ts';
-import { OpenAiAiService } from '../../infrastructure/ai/ai.service.ts';
-import { SqliteResearchRepository } from '../../infrastructure/persistence/repositories/sqlite-research-repository.ts';
-import { SqliteSourceRepository } from '../../infrastructure/persistence/repositories/sqlite-source-repository.ts';
+import { createResearchUseCase, closeDb } from '../../infrastructure/composition-root.ts';
 import * as ui from '../ui.ts';
 import { withCliError } from '../error-handler.ts';
 
@@ -15,11 +11,12 @@ export function registerResearchCommand(program: Command): void {
     .argument('<topic>', 'Topic to research')
     .action(async (topic: string) => {
       await withCliError(logger, 'Research', async () => {
-        const db = getDatabase();
-        const ai = new OpenAiAiService();
-        const researchRepo = new SqliteResearchRepository(db);
-        const sourceRepo = new SqliteSourceRepository(db);
-        const useCase = new ResearchUseCase(ai, researchRepo, sourceRepo, logger);
+        if (topic.length > 500) {
+          ui.error('Topic must be under 500 characters.');
+          process.exit(1);
+        }
+
+        const useCase = createResearchUseCase();
 
         ui.heading('Researching');
         ui.meta('Topic', topic);
@@ -57,7 +54,7 @@ export function registerResearchCommand(program: Command): void {
           ui.blank();
         }
 
-        db.close();
+        closeDb();
       });
     });
 }

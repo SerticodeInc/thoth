@@ -1,18 +1,17 @@
 import type { Command } from 'commander';
-import { getDatabase } from '../../infrastructure/persistence/database.ts';
 import { logger } from '../../infrastructure/logging/logger.ts';
-import { GenerateArticleUseCase } from '../../application/use-cases/generate-article.usecase.ts';
-import { OpenAiAiService } from '../../infrastructure/ai/ai.service.ts';
-import { SqliteArticleRepository } from '../../infrastructure/persistence/repositories/sqlite-article-repository.ts';
-import { SqliteProfileRepository } from '../../infrastructure/persistence/repositories/sqlite-profile-repository.ts';
-import { SqliteResearchRepository } from '../../infrastructure/persistence/repositories/sqlite-research-repository.ts';
+import {
+  createGenerateArticleUseCase,
+  createArticleRepository,
+  closeDb,
+} from '../../infrastructure/composition-root.ts';
 import * as ui from '../ui.ts';
 import { withCliError } from '../error-handler.ts';
 
 export function registerArticleCommand(program: Command): void {
   program
     .command('generate_article')
-    .description('Generate an article from research and voice profile')
+    .description('Generate an article using your voice profile (--topic, --research)')
     .option('-t, --topic <topic>', 'Topic to write about')
     .option('-r, --research <id>', 'Research note ID to use as source')
     .action(async (options: { topic?: string; research?: string }) => {
@@ -22,12 +21,12 @@ export function registerArticleCommand(program: Command): void {
           process.exit(1);
         }
 
-        const db = getDatabase();
-        const ai = new OpenAiAiService();
-        const articleRepo = new SqliteArticleRepository(db);
-        const profileRepo = new SqliteProfileRepository(db);
-        const researchRepo = new SqliteResearchRepository(db);
-        const useCase = new GenerateArticleUseCase(ai, articleRepo, profileRepo, researchRepo, logger);
+        if (options.topic && options.topic.length > 500) {
+          ui.error('Topic must be under 500 characters.');
+          process.exit(1);
+        }
+
+        const useCase = createGenerateArticleUseCase();
 
         ui.heading('Generating article');
         if (options.topic) ui.meta('Topic', options.topic);
@@ -61,7 +60,7 @@ export function registerArticleCommand(program: Command): void {
         ui.output(result.value.content);
         ui.divider();
 
-        db.close();
+        closeDb();
       });
     });
 
@@ -70,8 +69,7 @@ export function registerArticleCommand(program: Command): void {
     .description('List generated articles')
     .action(async () => {
       await withCliError(logger, 'Article list', async () => {
-        const db = getDatabase();
-        const repo = new SqliteArticleRepository(db);
+        const repo = createArticleRepository();
 
         const result = await repo.list();
         if (!result.ok) {
@@ -82,16 +80,16 @@ export function registerArticleCommand(program: Command): void {
         if (result.value.length === 0) {
           ui.empty('No articles generated yet.');
           ui.nextSteps(['thoth generate_article --topic "<topic>"']);
-          db.close();
+          closeDb();
           return;
         }
 
         ui.heading('Articles');
         for (const article of result.value) {
-          ui.item(article.id.slice(0, 8), `${article.title} (${article.wordCount} words, ${article.status})`);
+          ui.item(article.id, `${article.title} (${article.wordCount} words, ${article.status})`);
         }
 
-        db.close();
+        closeDb();
       });
     });
 
@@ -101,8 +99,7 @@ export function registerArticleCommand(program: Command): void {
     .argument('<id>', 'Article ID')
     .action(async (id: string) => {
       await withCliError(logger, 'Article get', async () => {
-        const db = getDatabase();
-        const repo = new SqliteArticleRepository(db);
+        const repo = createArticleRepository();
 
         const result = await repo.get(id);
         if (!result.ok) {
@@ -121,10 +118,10 @@ export function registerArticleCommand(program: Command): void {
         ui.meta('Created', result.value.createdAt.toLocaleString());
         ui.blank();
         ui.divider();
-        ui.output(result.value.content);
+        ui.article(result.value.content);
         ui.divider();
 
-        db.close();
+        closeDb();
       });
     });
 }

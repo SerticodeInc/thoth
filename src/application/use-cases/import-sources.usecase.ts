@@ -1,6 +1,7 @@
 import type { AiService } from '../../domain/repositories/ai-service.ts';
 import type { SourceType } from '../../domain/entities/source-reference.ts';
 import type { SourceRepository } from '../../domain/repositories/source-repository.ts';
+import type { Result } from '../../domain/entities/result.ts';
 import type { FileSourcePort } from '../ports/file-source.ts';
 import type { LoggerPort } from '../ports/logger.ts';
 
@@ -16,13 +17,16 @@ export class ImportSourcesUseCase {
     private readonly logger: LoggerPort,
   ) {}
 
-  async execute(sourcePath: string, type: SourceType): Promise<number> {
+  async execute(sourcePath: string, type: SourceType): Promise<Result<number>> {
     this.logger.info({ sourcePath, type }, 'Starting import');
 
     const sources = await this.fileSource.importFromPath(sourcePath, type);
 
-    const newSources = sources.filter((s) => {
-      const result = this.sourceRepo.isAlreadyImported(s.sourcePath, s.checksum);
+    const alreadyImportedResults = await Promise.all(
+      sources.map((s) => this.sourceRepo.isAlreadyImported(s.sourcePath, s.checksum)),
+    );
+    const newSources = sources.filter((_, i) => {
+      const result = alreadyImportedResults[i];
       return !result.ok || !result.value;
     });
 
@@ -33,13 +37,13 @@ export class ImportSourcesUseCase {
 
     if (newSources.length === 0) {
       this.logger.info({ type }, 'All sources already imported');
-      return 0;
+      return { ok: true, value: 0 };
     }
 
-    const saveResult = this.sourceRepo.saveSources(newSources);
+    const saveResult = await this.sourceRepo.saveSources(newSources);
     if (!saveResult.ok) {
       this.logger.error({ error: saveResult.error }, 'Failed to save sources');
-      return 0;
+      return { ok: false, error: saveResult.error };
     }
 
     const seen = new Set<string>();
@@ -47,22 +51,22 @@ export class ImportSourcesUseCase {
       const key = `${s.sourcePath}:${s.checksum}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      this.sourceRepo.logImport(s.sourcePath, s.checksum, type);
+      await this.sourceRepo.logImport(s.sourcePath, s.checksum, type);
     }
 
     this.logger.info({ type, count: newSources.length, skipped }, 'Import complete');
 
-    return newSources.length;
+    return { ok: true, value: newSources.length };
   }
 
   async generateEmbeddingsForType(
     type: SourceType,
     onProgress?: ProgressCallback,
-  ): Promise<void> {
-    const sourcesResult = this.sourceRepo.getSourcesByType(type);
+  ): Promise<Result<{ total: number; failed: number }>> {
+    const sourcesResult = await this.sourceRepo.getSourcesByType(type);
     if (!sourcesResult.ok) {
       this.logger.error({ error: sourcesResult.error }, 'Failed to load sources for embedding');
-      return;
+      return { ok: false, error: sourcesResult.error };
     }
 
     const sources = sourcesResult.value;
@@ -70,10 +74,12 @@ export class ImportSourcesUseCase {
 
     if (total === 0) {
       onProgress?.(0, 0, 'No sources to embed');
-      return;
+      return { ok: true, value: { total: 0, failed: 0 } };
     }
 
     let completed = 0;
+    let failed = 0;
+    const model = this.ai.getActiveEmbeddingModel();
 
     const processChunk = async (chunk: typeof sources) => {
       const results = await Promise.allSettled(
@@ -84,23 +90,26 @@ export class ImportSourcesUseCase {
         const result = results[j];
         if (result.status === 'rejected') {
           this.logger.warn({ sourceId: chunk[j].id }, 'Embedding rejected');
+          failed++;
           completed++;
           continue;
         }
 
         if (!result.value.ok) {
           this.logger.warn({ sourceId: chunk[j].id, error: result.value.error }, 'Embedding failed');
+          failed++;
           completed++;
           continue;
         }
 
-        const storeResult = this.sourceRepo.saveSourceEmbedding(
+        const storeResult = await this.sourceRepo.saveSourceEmbedding(
           chunk[j].id,
           result.value.value,
-          'text-embedding-3-small',
+          model,
         );
         if (!storeResult.ok) {
           this.logger.warn({ sourceId: chunk[j].id, error: storeResult.error }, 'Failed to store embedding');
+          failed++;
         }
         completed++;
       }
@@ -115,10 +124,11 @@ export class ImportSourcesUseCase {
     }
 
     this.logger.info({ type, total: sources.length }, 'Embeddings complete');
+    return { ok: true, value: { total, failed } };
   }
 
-  getImportStatus(type: SourceType): number {
-    const count = this.sourceRepo.getSourceCountByType(type);
+  async getImportStatus(type: SourceType): Promise<number> {
+    const count = await this.sourceRepo.getSourceCountByType(type);
     return count.ok ? count.value : 0;
   }
 }

@@ -95,6 +95,10 @@ export function output(value: string): void {
   process.stdout.write(value + '\n');
 }
 
+export function article(value: string): void {
+  writeStderr(value);
+}
+
 export function timer(start: [number, number]): string {
   const elapsed = process.hrtime(start);
   const ms = elapsed[0] * 1000 + elapsed[1] / 1_000_000;

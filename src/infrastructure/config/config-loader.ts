@@ -55,7 +55,7 @@ export function loadConfig(): ThothConfig {
 }
 
 const DEFAULTS: ThothConfig = {
-  logLevel: 'warn',
+  logLevel: 'error',
 };
 
 export function resolveConfig(cliLocal?: boolean, cliProvider?: string): ThothConfig {

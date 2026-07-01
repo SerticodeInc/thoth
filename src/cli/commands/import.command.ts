@@ -1,12 +1,8 @@
 import type { Command } from 'commander';
 import cliProgress from 'cli-progress';
-import { ImportSourcesUseCase } from '../../application/use-cases/import-sources.usecase.ts';
 import type { SourceType } from '../../domain/entities/source-reference.ts';
-import { FileSourceAdapter } from '../../infrastructure/adapters/file-source.adapter.ts';
-import { OpenAiAiService } from '../../infrastructure/ai/ai.service.ts';
 import { logger } from '../../infrastructure/logging/logger.ts';
-import { getDatabase } from '../../infrastructure/persistence/database.ts';
-import { SqliteSourceRepository } from '../../infrastructure/persistence/repositories/sqlite-source-repository.ts';
+import { createImportSourcesUseCase, closeDb } from '../../infrastructure/composition-root.ts';
 import * as ui from '../ui.ts';
 import { withCliError } from '../error-handler.ts';
 
@@ -38,19 +34,22 @@ export function registerImportCommand(program: Command): void {
 
 async function runImport(sourcePath: string, type: SourceType): Promise<void> {
   await withCliError(logger, 'Import', async () => {
-    const db = getDatabase();
-    const ai = new OpenAiAiService();
-    const sourceRepo = new SqliteSourceRepository(db);
-    const fileSource = new FileSourceAdapter();
-    const useCase = new ImportSourcesUseCase(sourceRepo, fileSource, ai, logger);
+    const useCase = createImportSourcesUseCase();
 
     const startTime = process.hrtime();
 
     ui.heading(`Importing ${type} sources`);
     ui.meta('Path', sourcePath);
 
-    const count = await useCase.execute(sourcePath, type);
+    const importResult = await useCase.execute(sourcePath, type);
 
+    if (!importResult.ok) {
+      ui.error(`Import failed: ${importResult.error}`);
+      closeDb();
+      return;
+    }
+
+    const count = importResult.value;
     ui.success(`Imported ${count} chunks.`);
 
     const embedBar = new cliProgress.SingleBar({
@@ -60,24 +59,43 @@ async function runImport(sourcePath: string, type: SourceType): Promise<void> {
       hideCursor: true,
     });
 
-    let embeddingsOk = false;
-    ui.step('Generating embeddings...');
-    try {
-      embedBar.start(count, 0);
-      await useCase.generateEmbeddingsForType(type, (current: number) => {
-        embedBar.update(current);
-      });
-      embedBar.stop();
-      ui.success('Embeddings complete.');
-      embeddingsOk = true;
-    } catch (error) {
-      embedBar.stop();
-      ui.warn('Embedding generation failed. You can retry by running import again.');
-      const message = error instanceof Error ? error.message : String(error);
-      ui.warn(message);
+    let embedOk = true;
+    let embedFailed = 0;
+    let embedTotal = 0;
+
+    if (count > 0) {
+      ui.step('Generating embeddings...');
+      try {
+        embedBar.start(count, 0);
+        const embedResult = await useCase.generateEmbeddingsForType(type, (current: number) => {
+          embedBar.update(current);
+        });
+        embedBar.stop();
+        if (!embedResult.ok) {
+          ui.warn(`Embedding failed: ${embedResult.error}`);
+          embedOk = false;
+        } else {
+          embedFailed = embedResult.value.failed;
+          embedTotal = embedResult.value.total;
+          if (embedFailed > 0) {
+            ui.warn(`${embedFailed} of ${embedTotal} embeddings failed.`);
+            if (embedFailed === embedTotal) {
+              ui.warn('Check that your embedding provider is configured correctly.');
+            }
+          } else {
+            ui.success('Embeddings complete.');
+          }
+        }
+      } catch (error) {
+        embedBar.stop();
+        ui.warn('Embedding generation failed. You can retry by running import again.');
+        const message = error instanceof Error ? error.message : String(error);
+        ui.warn(message);
+        embedOk = false;
+      }
     }
 
-    db.close();
+    closeDb();
 
     const duration = ui.timer(startTime);
 
@@ -87,7 +105,13 @@ async function runImport(sourcePath: string, type: SourceType): Promise<void> {
     ui.summary({
       Type: type,
       'Chunks imported': String(count),
-      Embeddings: embeddingsOk ? 'complete' : 'failed',
+      Embeddings: count === 0
+        ? 'none'
+        : !embedOk
+          ? 'failed'
+          : embedFailed === 0
+            ? 'complete'
+            : `${embedFailed}/${embedTotal} failed`,
       Duration: duration,
     });
     ui.blank();

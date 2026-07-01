@@ -5,6 +5,7 @@ import type { SourceRepository } from '../../domain/repositories/source-reposito
 import type { ResearchNote, ResearchCitation } from '../../domain/entities/research-note.ts';
 import type { Result } from '../../domain/entities/result.ts';
 import type { LoggerPort } from '../ports/logger.ts';
+import { parseJsonRecord } from './parse-ai-json.ts';
 
 const RESEARCH_PROMPT = `You are a research assistant synthesizing information from a person's own writing.
 
@@ -42,7 +43,7 @@ export class ResearchUseCase {
     const embedResult = await this.ai.generateEmbedding(topic);
     if (!embedResult.ok) return { ok: false, error: `Embedding failed: ${embedResult.error}` };
 
-    const nearChunks = this.sourceRepo.searchByVector(embedResult.value, 15);
+    const nearChunks = await this.sourceRepo.searchByVector(embedResult.value, 15);
     if (!nearChunks.ok) return { ok: false, error: nearChunks.error };
 
     if (nearChunks.value.length === 0) {
@@ -64,10 +65,11 @@ export class ResearchUseCase {
 
     if (!chatResult.ok) return { ok: false, error: chatResult.error };
 
-    const parsed = JSON.parse(chatResult.value) as Record<string, unknown>;
+    const parsed = parseJsonRecord(chatResult.value);
+    if (!parsed.ok) return { ok: false, error: `Invalid JSON response from research AI: ${parsed.error}` };
 
-    const content = parsed.content;
-    const rawCitations = parsed.citations;
+    const content = parsed.value.content;
+    const rawCitations = parsed.value.citations;
 
     if (typeof content !== 'string' || !Array.isArray(rawCitations)) {
       return { ok: false, error: 'Research response missing content or citations' };
@@ -96,7 +98,7 @@ export class ResearchUseCase {
       const embResult = await this.researchRepo.saveResearchEmbedding(
         note.id,
         noteEmbedResult.value,
-        'text-embedding-3-small',
+        this.ai.getActiveEmbeddingModel(),
       );
       if (!embResult.ok) {
         this.logger.warn({ error: embResult.error }, 'Failed to save research embedding');

@@ -10,4 +10,5 @@ export interface ChatParams {
 export interface AiService {
   chat(params: ChatParams): Promise<Result<string>>;
   generateEmbedding(text: string): Promise<Result<number[]>>;
+  getActiveEmbeddingModel(): string;
 }

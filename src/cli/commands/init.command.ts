@@ -1,7 +1,6 @@
 import type { Command } from 'commander';
 import { logger } from '../../infrastructure/logging/logger.ts';
-import { getDatabase } from '../../infrastructure/persistence/database.ts';
-import { SqliteSourceRepository } from '../../infrastructure/persistence/repositories/sqlite-source-repository.ts';
+import { createSourceRepository, closeDb } from '../../infrastructure/composition-root.ts';
 import { withCliError } from '../error-handler.ts';
 import * as ui from '../ui.ts';
 
@@ -13,12 +12,13 @@ export function registerInitCommand(program: Command): void {
       await withCliError(logger, 'Init', async () => {
         logger.info('Initializing Thoth');
 
-        const db = getDatabase();
-        const sourceRepo = new SqliteSourceRepository(db);
+        const sourceRepo = createSourceRepository();
 
-        const voiceCount = sourceRepo.getSourceCountByType('voice');
-        const knowledgeCount = sourceRepo.getSourceCountByType('knowledge');
-        const pubCount = sourceRepo.getSourceCountByType('publication');
+        const [voiceCount, knowledgeCount, pubCount] = await Promise.all([
+          sourceRepo.getSourceCountByType('voice'),
+          sourceRepo.getSourceCountByType('knowledge'),
+          sourceRepo.getSourceCountByType('publication'),
+        ]);
 
         const counts = {
           voice: voiceCount.ok ? voiceCount.value : 0,
@@ -58,7 +58,7 @@ export function registerInitCommand(program: Command): void {
           'thoth create_series <name>        Group articles into series',
         ]);
 
-        db.close();
+        closeDb();
       });
     });
 }

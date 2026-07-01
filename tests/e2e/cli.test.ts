@@ -1,19 +1,27 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execSync } from 'child_process';
 import { unlinkSync, existsSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 
 const CLI = 'npx tsx src/index.ts';
+const testDb = join(homedir(), '.thoth', 'thoth-test.db');
 
 function runCli(...args: string[]): string {
-  return execSync(`${CLI} ${args.join(' ')} 2>&1`, { encoding: 'utf-8' });
+  return execSync(`${CLI} ${args.join(' ')} 2>&1`, {
+    encoding: 'utf-8',
+    env: { ...process.env, THOTH_DB_PATH: testDb },
+  });
 }
 
 describe('CLI e2e', () => {
-  const testDb = join(homedir(), '.thoth', 'thoth.db');
-
   beforeAll(() => {
+    if (existsSync(testDb)) {
+      unlinkSync(testDb);
+    }
+  });
+
+  afterAll(() => {
     if (existsSync(testDb)) {
       unlinkSync(testDb);
     }

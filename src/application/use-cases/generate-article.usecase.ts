@@ -28,7 +28,7 @@ Write a complete article on the given topic using the provided research material
 1. Match the author's voice exactly — follow every trait above
 2. Be informative and well-structured with a clear introduction, body, and conclusion
 3. Incorporate insights from the research material naturally
-4. Be between 800-1500 words unless the topic demands more depth
+ 4. Be between 1600-2500 words — aim for an 8-10 minute read. Go deeper if the topic demands it.
 
 Return ONLY valid JSON with this exact structure:
 {

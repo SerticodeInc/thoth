@@ -82,7 +82,7 @@ export class GenerateProfilesUseCase {
   ): Promise<Result<T>> {
     const typeLabel = type === 'publication' ? 'publication' : type;
 
-    const sourcesResult = this.sourceRepo.getSourcesByType(type);
+    const sourcesResult = await this.sourceRepo.getSourcesByType(type);
     if (!sourcesResult.ok) return { ok: false, error: sourcesResult.error };
     const sources = sourcesResult.value;
 
@@ -132,6 +132,7 @@ export class GenerateProfilesUseCase {
         profile.id,
         type,
         embedResult.value,
+        this.ai.getActiveEmbeddingModel(),
       );
       if (!embResult.ok) {
         this.logger.warn({ error: embResult.error }, 'Embedding save failed for profile');

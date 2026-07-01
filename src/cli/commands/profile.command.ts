@@ -1,10 +1,11 @@
 import type { Command } from 'commander';
-import { getDatabase } from '../../infrastructure/persistence/database.ts';
 import { logger } from '../../infrastructure/logging/logger.ts';
-import { GenerateProfilesUseCase } from '../../application/use-cases/generate-profiles.usecase.ts';
-import { OpenAiAiService } from '../../infrastructure/ai/ai.service.ts';
-import { SqliteProfileRepository } from '../../infrastructure/persistence/repositories/sqlite-profile-repository.ts';
-import { SqliteSourceRepository } from '../../infrastructure/persistence/repositories/sqlite-source-repository.ts';
+import {
+  createGenerateProfilesUseCase,
+  createProfileRepository,
+  createSourceRepository,
+  closeDb,
+} from '../../infrastructure/composition-root.ts';
 import * as ui from '../ui.ts';
 import { withCliError } from '../error-handler.ts';
 
@@ -19,15 +20,14 @@ export function registerProfileCommand(program: Command): void {
     .description('Generate identity profiles from imported sources')
     .action(async () => {
       await withCliError(logger, 'Profile generation', async () => {
-        const db = getDatabase();
-        const ai = new OpenAiAiService();
-        const profileRepo = new SqliteProfileRepository(db);
-        const sourceRepo = new SqliteSourceRepository(db);
-        const useCase = new GenerateProfilesUseCase(ai, profileRepo, sourceRepo, logger);
+        const useCase = createGenerateProfilesUseCase();
+        const sourceRepo = createSourceRepository();
 
-        const voiceCount = sourceRepo.getSourceCountByType('voice');
-        const knowledgeCount = sourceRepo.getSourceCountByType('knowledge');
-        const pubCount = sourceRepo.getSourceCountByType('publication');
+        const [voiceCount, knowledgeCount, pubCount] = await Promise.all([
+          sourceRepo.getSourceCountByType('voice'),
+          sourceRepo.getSourceCountByType('knowledge'),
+          sourceRepo.getSourceCountByType('publication'),
+        ]);
 
         const counts = {
           voice: voiceCount.ok ? voiceCount.value : 0,
@@ -103,7 +103,7 @@ export function registerProfileCommand(program: Command): void {
               ? `Profile generation completed with ${failures.length} failure(s).`
               : 'Profile generation failed.',
           );
-          db.close();
+          closeDb();
           process.exit(1);
         }
 
@@ -119,7 +119,7 @@ export function registerProfileCommand(program: Command): void {
           'thoth generate_article --topic   Draft in your voice',
         ]);
 
-        db.close();
+        closeDb();
       });
     });
 
@@ -128,14 +128,15 @@ export function registerProfileCommand(program: Command): void {
     .description('Show profile generation status')
     .action(async () => {
       await withCliError(logger, 'Status check', async () => {
-        const db = getDatabase();
-        const profileRepo = new SqliteProfileRepository(db);
-        const sourceRepo = new SqliteSourceRepository(db);
+        const profileRepo = createProfileRepository();
+        const sourceRepo = createSourceRepository();
 
-        const voiceCount = sourceRepo.getSourceCountByType('voice');
-        const knowledgeCount = sourceRepo.getSourceCountByType('knowledge');
-        const pubCount = sourceRepo.getSourceCountByType('publication');
-        const statusResult = await profileRepo.getProfileStatus();
+        const [voiceCount, knowledgeCount, pubCount, statusResult] = await Promise.all([
+          sourceRepo.getSourceCountByType('voice'),
+          sourceRepo.getSourceCountByType('knowledge'),
+          sourceRepo.getSourceCountByType('publication'),
+          profileRepo.getProfileStatus(),
+        ]);
 
         if (!statusResult.ok) {
           ui.error(`Status check failed: ${statusResult.error}`);
@@ -170,7 +171,7 @@ export function registerProfileCommand(program: Command): void {
             : `${ui.color.yellow('[missing]')} Not generated`,
         );
 
-        db.close();
+        closeDb();
       });
     });
 }

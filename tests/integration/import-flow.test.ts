@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../src/infrastructure/ai/ai.service.ts', () => ({
   OpenAiAiService: vi.fn().mockImplementation(() => ({
+    getActiveEmbeddingModel: vi.fn().mockReturnValue('text-embedding-3-small'),
     generateEmbedding: vi.fn().mockResolvedValue({ ok: true, value: new Array(1536).fill(0.1) }),
     chat: vi.fn().mockImplementation(async (_params: { systemPrompt: string }) => {
       return { ok: true, value: JSON.stringify({
@@ -43,11 +44,22 @@ function createTestDb(): Database.Database {
   db.pragma('journal_mode = WAL');
   sqliteVec.load(db);
 
-  const migration = readFileSync(
-    join(import.meta.dirname, '../../src/infrastructure/persistence/migrations/001_initial.sql'),
-    'utf-8',
-  );
-  db.exec(migration);
+  const migrationFiles = [
+    '001_initial.sql',
+    '002_research.sql',
+    '003_articles.sql',
+    '004_series.sql',
+    '005_import_log.sql',
+    '006_vectors_per_provider.sql',
+  ];
+
+  for (const file of migrationFiles) {
+    const sql = readFileSync(
+      join(import.meta.dirname, `../../src/infrastructure/persistence/migrations/${file}`),
+      'utf-8',
+    );
+    db.exec(sql);
+  }
 
   return db;
 }
@@ -74,9 +86,11 @@ describe('ImportSourcesUseCase', () => {
     const useCase = new ImportSourcesUseCase(sourceRepo, fileSource, ai, logger);
     const filePath = createTestFile('# My Journal\n\nTest content here.');
 
-    const count = await useCase.execute(filePath, 'voice');
+    const result = await useCase.execute(filePath, 'voice');
 
-    expect(count).toBeGreaterThanOrEqual(1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toBeGreaterThanOrEqual(1);
   });
 
   it('assigns correct source type', async () => {
@@ -86,9 +100,10 @@ describe('ImportSourcesUseCase', () => {
     const useCase = new ImportSourcesUseCase(sourceRepo, fileSource, ai, logger);
     const filePath = createTestFile('# Tech Notes\n\nFlutter architecture notes.');
 
-    await useCase.execute(filePath, 'knowledge');
+    const execResult = await useCase.execute(filePath, 'knowledge');
+    expect(execResult.ok).toBe(true);
 
-    const sources = sourceRepo.getSourcesByType('knowledge');
+    const sources = await sourceRepo.getSourcesByType('knowledge');
     expect(sources.ok).toBe(true);
     if (!sources.ok) return;
     expect(sources.value[0].type).toBe('knowledge');
@@ -102,9 +117,11 @@ describe('ImportSourcesUseCase', () => {
     const largeContent = 'x'.repeat(11 * 1024 * 1024);
     const filePath = createTestFile(largeContent);
 
-    const count = await useCase.execute(filePath, 'voice');
+    const result = await useCase.execute(filePath, 'voice');
 
-    expect(count).toBe(0);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toBe(0);
   });
 
   it('generates embeddings for imported sources', async () => {
@@ -115,7 +132,8 @@ describe('ImportSourcesUseCase', () => {
     const filePath = createTestFile('# Test\n\nSome content for embedding.');
 
     await useCase.execute(filePath, 'voice');
-    await useCase.generateEmbeddingsForType('voice');
+    const embedResult = await useCase.generateEmbeddingsForType('voice');
+    expect(embedResult.ok).toBe(true);
 
     const embRows = db.prepare('SELECT COUNT(*) as count FROM source_embeddings').get() as { count: number };
     expect(embRows.count).toBeGreaterThanOrEqual(1);
@@ -185,7 +203,7 @@ describe('GenerateProfilesUseCase', () => {
     await importUseCase.execute(filePath, 'voice');
     await genUseCase.generateVoiceProfile();
 
-    const vecRow = db.prepare('SELECT COUNT(*) as count FROM vec_profiles').get() as { count: number };
+    const vecRow = db.prepare('SELECT COUNT(*) as count FROM vec_profiles_openai').get() as { count: number };
     expect(vecRow.count).toBeGreaterThanOrEqual(1);
 
     const embRow = db.prepare('SELECT COUNT(*) as count FROM profile_embeddings').get() as { count: number };

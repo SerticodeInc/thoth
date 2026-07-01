@@ -15,12 +15,12 @@ export interface ImportLogEntry {
 }
 
 export interface SourceRepository {
-  saveSources(sources: SourceReference[]): Result<void>;
-  getSourcesByType(type: SourceType): Result<SourceReference[]>;
-  getSourceCountByType(type: SourceType): Result<number>;
-  searchByVector(embedding: number[], k: number): Result<VectorSearchResult[]>;
-  saveSourceEmbedding(sourceId: string, embedding: number[], model: string): Result<void>;
-  isAlreadyImported(sourcePath: string, checksum: string): Result<boolean>;
-  logImport(sourcePath: string, checksum: string, type: SourceType): Result<void>;
+  saveSources(sources: SourceReference[]): Promise<Result<void>>;
+  getSourcesByType(type: SourceType): Promise<Result<SourceReference[]>>;
+  getSourceCountByType(type: SourceType): Promise<Result<number>>;
+  searchByVector(embedding: number[], k: number): Promise<Result<VectorSearchResult[]>>;
+  saveSourceEmbedding(sourceId: string, embedding: number[], model: string): Promise<Result<void>>;
+  isAlreadyImported(sourcePath: string, checksum: string): Promise<Result<boolean>>;
+  logImport(sourcePath: string, checksum: string, type: SourceType): Promise<Result<void>>;
 }
 

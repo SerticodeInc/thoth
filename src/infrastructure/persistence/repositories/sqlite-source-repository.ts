@@ -5,27 +5,34 @@ import type { Result } from '../../../domain/entities/result.ts';
 import { saveSources, getSourcesByType, getSourceCountByType } from './source-repository.ts';
 
 export class SqliteSourceRepository implements SourceRepository {
-  constructor(private readonly db: Database.Database) {}
+  private readonly vecTable: string;
 
-  saveSources(sources: SourceReference[]): Result<void> {
+  constructor(
+    private readonly db: Database.Database,
+    embeddingTableSuffix: string = 'openai',
+  ) {
+    this.vecTable = `vec_sources_${embeddingTableSuffix}`;
+  }
+
+  saveSources(sources: SourceReference[]): Promise<Result<void>> {
     saveSources(this.db, sources);
-    return { ok: true, value: undefined };
+    return Promise.resolve({ ok: true, value: undefined });
   }
 
-  getSourcesByType(type: SourceType): Result<SourceReference[]> {
-    return getSourcesByType(this.db, type);
+  getSourcesByType(type: SourceType): Promise<Result<SourceReference[]>> {
+    return Promise.resolve(getSourcesByType(this.db, type));
   }
 
-  getSourceCountByType(type: SourceType): Result<number> {
-    return { ok: true, value: getSourceCountByType(this.db, type) };
+  getSourceCountByType(type: SourceType): Promise<Result<number>> {
+    return Promise.resolve({ ok: true, value: getSourceCountByType(this.db, type) });
   }
 
-  searchByVector(embedding: number[], k: number): Result<VectorSearchResult[]> {
+  searchByVector(embedding: number[], k: number): Promise<Result<VectorSearchResult[]>> {
     try {
       const rows = this.db
         .prepare(
           `SELECT v.rowid, s.id, s.source_path, s.content, v.distance
-           FROM vec_sources v
+           FROM ${this.vecTable} v
            JOIN sources s ON v.rowid = s.rowid
            WHERE v.embedding MATCH ? AND k = ?
            ORDER BY v.distance`,
@@ -45,37 +52,40 @@ export class SqliteSourceRepository implements SourceRepository {
         distance: r.distance,
       }));
 
-      return { ok: true, value: results };
+      return Promise.resolve({ ok: true, value: results });
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      return Promise.resolve({ ok: false, error: error instanceof Error ? error.message : String(error) });
     }
   }
 
-  isAlreadyImported(sourcePath: string, checksum: string): Result<boolean> {
+  isAlreadyImported(sourcePath: string, checksum: string): Promise<Result<boolean>> {
     try {
       const row = this.db
         .prepare('SELECT 1 FROM import_log WHERE source_path = ? AND checksum = ?')
         .get(sourcePath, checksum);
-      return { ok: true, value: !!row };
+      return Promise.resolve({ ok: true, value: !!row });
     } catch {
-      return { ok: true, value: false };
+      return Promise.resolve({ ok: true, value: false });
     }
   }
 
-  logImport(sourcePath: string, checksum: string, type: SourceType): Result<void> {
+  logImport(sourcePath: string, checksum: string, type: SourceType): Promise<Result<void>> {
     try {
       this.db
         .prepare('INSERT OR IGNORE INTO import_log (source_path, checksum, type) VALUES (?, ?, ?)')
         .run(sourcePath, checksum, type);
-    } catch {
-      // table may not exist on first run — non-critical
+      return Promise.resolve({ ok: true, value: undefined });
+    } catch (error) {
+      return Promise.resolve({
+        ok: false,
+        error: `Failed to log import: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
-    return { ok: true, value: undefined };
   }
 
-  saveSourceEmbedding(sourceId: string, embedding: number[], model: string): Result<void> {
+  saveSourceEmbedding(sourceId: string, embedding: number[], model: string): Promise<Result<void>> {
     try {
-      const insertVec = this.db.prepare('INSERT INTO vec_sources (embedding) VALUES (?)');
+      const insertVec = this.db.prepare(`INSERT INTO ${this.vecTable} (embedding) VALUES (?)`);
       const insertEmb = this.db.prepare(
         'INSERT INTO source_embeddings (source_id, model) VALUES (?, ?)',
       );
@@ -86,9 +96,9 @@ export class SqliteSourceRepository implements SourceRepository {
       });
 
       doInsert();
-      return { ok: true, value: undefined };
+      return Promise.resolve({ ok: true, value: undefined });
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      return Promise.resolve({ ok: false, error: error instanceof Error ? error.message : String(error) });
     }
   }
 }

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../src/infrastructure/ai/ai.service.ts', () => ({
   OpenAiAiService: vi.fn().mockImplementation(() => ({
+    getActiveEmbeddingModel: vi.fn().mockReturnValue('text-embedding-3-small'),
     generateEmbedding: vi.fn().mockResolvedValue({ ok: true, value: new Array(1536).fill(0.1) }),
     chat: vi.fn().mockResolvedValue({
       ok: true,
@@ -33,15 +34,15 @@ function createTestDb(): Database.Database {
     '001_initial.sql',
     '002_research.sql',
     '003_articles.sql',
+    '006_vectors_per_provider.sql',
   ];
 
   for (const m of migrations) {
     const sql = readFileSync(
-      join(import.meta.dirname, `../../src/infrastructure/persistence/migrations/${m.replace('.sql', '.ts')}`),
+      join(import.meta.dirname, `../../src/infrastructure/persistence/migrations/${m}`),
       'utf-8',
     );
-    const exportMatch = sql.match(/`([^`]+)`/);
-    if (exportMatch) db.exec(exportMatch[1]);
+    db.exec(sql);
   }
 
   return db;

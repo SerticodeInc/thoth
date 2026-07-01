@@ -1,12 +1,14 @@
 import type { Command } from 'commander';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { getDatabase } from '../../infrastructure/persistence/database.ts';
+import { homedir } from 'node:os';
 import { logger } from '../../infrastructure/logging/logger.ts';
-import { SqliteArticleRepository } from '../../infrastructure/persistence/repositories/sqlite-article-repository.ts';
-import { SqliteSeriesRepository } from '../../infrastructure/persistence/repositories/sqlite-series-repository.ts';
-import { ExportArticleUseCase } from '../../application/use-cases/export-article.usecase.ts';
-import { ExportSeriesUseCase } from '../../application/use-cases/export-series.usecase.ts';
+import { loadConfig } from '../../infrastructure/config/config-loader.ts';
+import {
+  createExportArticleUseCase,
+  createExportSeriesUseCase,
+  closeDb,
+} from '../../infrastructure/composition-root.ts';
 import type { ExportFormat } from '../../application/use-cases/export-article.usecase.ts';
 import type { SeriesExportFormat } from '../../application/use-cases/export-series.usecase.ts';
 import * as ui from '../ui.ts';
@@ -15,13 +17,19 @@ import { withCliError } from '../error-handler.ts';
 const VALID_ARTICLE_FORMATS = ['md', 'html', 'txt'];
 const VALID_SERIES_FORMATS = ['md', 'html', 'rss'];
 
+function defaultOutputDir(type: 'singles' | 'series'): string {
+  const config = loadConfig();
+  if (config.export?.outputDir) return join(config.export.outputDir, type);
+  return join(homedir(), 'Documents', 'Thoth', type);
+}
+
 export function registerExportCommand(program: Command): void {
   program
     .command('export_article')
-    .description('Export an article to file')
+    .description('Export an article (--format md|html|txt, --output <path>)')
     .argument('<id>', 'Article ID')
     .option('-f, --format <format>', 'Output format (md, html, txt)', 'md')
-    .option('-o, --output <path>', 'Output directory', '.')
+    .option('-o, --output <path>', 'Output directory', defaultOutputDir('singles'))
     .action(async (id: string, options: { format: string; output: string }) => {
       await withCliError(logger, 'Export article', async () => {
         if (!VALID_ARTICLE_FORMATS.includes(options.format)) {
@@ -29,9 +37,7 @@ export function registerExportCommand(program: Command): void {
           process.exit(1);
         }
 
-        const db = getDatabase();
-        const articleRepo = new SqliteArticleRepository(db);
-        const useCase = new ExportArticleUseCase(articleRepo);
+        const useCase = createExportArticleUseCase();
 
         const result = await useCase.execute({
           articleId: id,
@@ -51,19 +57,24 @@ export function registerExportCommand(program: Command): void {
         const outPath = join(outDir, result.value.filename);
         writeFileSync(outPath, result.value.content, 'utf-8');
 
+        ui.blank();
         ui.success('Article exported.');
-        ui.meta('Path', outPath);
+        ui.summary({
+          Title: result.value.filename.replace(/\.[^.]+$/, ''),
+          Format: options.format,
+          Path: outPath,
+        });
 
-        db.close();
+        closeDb();
       });
     });
 
   program
     .command('export_series')
-    .description('Export a series to file')
+    .description('Export a series (--format md|html|rss, --output <path>)')
     .argument('<id>', 'Series ID')
     .option('-f, --format <format>', 'Output format (md, html, rss)', 'md')
-    .option('-o, --output <path>', 'Output directory', '.')
+    .option('-o, --output <path>', 'Output directory', defaultOutputDir('series'))
     .action(async (id: string, options: { format: string; output: string }) => {
       await withCliError(logger, 'Export series', async () => {
         if (!VALID_SERIES_FORMATS.includes(options.format)) {
@@ -71,10 +82,7 @@ export function registerExportCommand(program: Command): void {
           process.exit(1);
         }
 
-        const db = getDatabase();
-        const seriesRepo = new SqliteSeriesRepository(db);
-        const articleRepo = new SqliteArticleRepository(db);
-        const useCase = new ExportSeriesUseCase(seriesRepo, articleRepo);
+        const useCase = createExportSeriesUseCase();
 
         const result = await useCase.execute({
           seriesId: id,
@@ -94,10 +102,15 @@ export function registerExportCommand(program: Command): void {
         const outPath = join(outDir, result.value.filename);
         writeFileSync(outPath, result.value.content, 'utf-8');
 
+        ui.blank();
         ui.success('Series exported.');
-        ui.meta('Path', outPath);
+        ui.summary({
+          Title: result.value.filename.replace(/\.[^.]+$/, ''),
+          Format: options.format,
+          Path: outPath,
+        });
 
-        db.close();
+        closeDb();
       });
     });
 }

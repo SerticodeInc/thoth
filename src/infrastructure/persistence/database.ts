@@ -10,6 +10,7 @@ import { MIGRATION_002 } from './migrations/002_research.ts';
 import { MIGRATION_003 } from './migrations/003_articles.ts';
 import { MIGRATION_004 } from './migrations/004_series.ts';
 import { MIGRATION_005 } from './migrations/005_import_log.ts';
+import { MIGRATION_006 } from './migrations/006_vectors_per_provider.ts';
 
 let db: Database.Database | null = null;
 let cachedDbPath: string | null = null;
@@ -60,6 +61,7 @@ function runMigrations(db: Database.Database): void {
     { name: '003_articles.sql', sql: MIGRATION_003 },
     { name: '004_series.sql', sql: MIGRATION_004 },
     { name: '005_import_log.sql', sql: MIGRATION_005 },
+    { name: '006_vectors_per_provider.sql', sql: MIGRATION_006 },
   ];
 
   for (const migration of migrations) {
