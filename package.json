@@ -1,5 +1,5 @@
 {
-  "name": "thoth",
+  "name": "@serticode/thoth",
   "version": "1.0.0",
   "description": "Identity Preserving Publishing Engine",
   "type": "module",

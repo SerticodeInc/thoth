@@ -8,6 +8,7 @@ export interface Article {
   readonly researchId: string | null;
   readonly wordCount: number;
   readonly status: ArticleStatus;
+  readonly mediumUrl: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }

@@ -8,6 +8,7 @@ import { registerInitCommand } from './commands/init.command.ts';
 import { registerProfileCommand } from './commands/profile.command.ts';
 import { registerResearchCommand } from './commands/research.command.ts';
 import { registerSeriesCommand } from './commands/series.command.ts';
+import { registerPublishCommand } from './commands/publish.command.ts';
 
 let activeConfig: ReturnType<typeof resolveConfig> | null = null;
 
@@ -51,6 +52,7 @@ export function createCli(): Command {
   registerArticleCommand(program);
   registerSeriesCommand(program);
   registerExportCommand(program);
+  registerPublishCommand(program);
 
   return program;
 }

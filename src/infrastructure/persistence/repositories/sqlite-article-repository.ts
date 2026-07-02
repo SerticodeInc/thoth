@@ -12,6 +12,7 @@ const articleRowSchema = z.object({
   research_id: z.string().nullable(),
   word_count: z.number(),
   status: z.enum(['draft', 'published', 'archived']),
+  medium_url: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
 }).transform((row) => ({
@@ -22,6 +23,7 @@ const articleRowSchema = z.object({
   researchId: row.research_id,
   wordCount: row.word_count,
   status: row.status,
+  mediumUrl: row.medium_url,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 }));
@@ -32,13 +34,14 @@ export class SqliteArticleRepository implements ArticleRepository {
   save(article: Article): Promise<Result<Article>> {
     this.db
       .prepare(
-        `INSERT INTO articles (id, title, content, voice_profile_id, research_id, word_count, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO articles (id, title, content, voice_profile_id, research_id, word_count, status, medium_url, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            title = excluded.title,
            content = excluded.content,
            word_count = excluded.word_count,
            status = excluded.status,
+           medium_url = excluded.medium_url,
            updated_at = excluded.updated_at`,
       )
       .run(
@@ -49,6 +52,7 @@ export class SqliteArticleRepository implements ArticleRepository {
         article.researchId,
         article.wordCount,
         article.status,
+        article.mediumUrl,
         article.createdAt.toISOString(),
         article.updatedAt.toISOString(),
       );

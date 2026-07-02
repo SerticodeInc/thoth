@@ -117,6 +117,7 @@ export class GenerateArticleUseCase {
       researchId,
       wordCount,
       status: 'draft',
+      mediumUrl: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };

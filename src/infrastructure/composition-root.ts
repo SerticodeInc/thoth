@@ -12,6 +12,8 @@ import { ImportSourcesUseCase } from '../application/use-cases/import-sources.us
 import { ExportArticleUseCase } from '../application/use-cases/export-article.usecase.ts';
 import { ExportSeriesUseCase } from '../application/use-cases/export-series.usecase.ts';
 import { SeriesUseCase } from '../application/use-cases/series.usecase.ts';
+import { PublishArticleUseCase } from '../application/use-cases/publish-article.usecase.ts';
+import { MediumHttpAdapter } from './publishing/medium-http.adapter.ts';
 
 import { SqliteResearchRepository } from './persistence/repositories/sqlite-research-repository.ts';
 import { SqliteArticleRepository } from './persistence/repositories/sqlite-article-repository.ts';
@@ -107,6 +109,18 @@ export function createSourceRepository() {
 export function createResearchRepository() {
   const key = providerKey();
   return new SqliteResearchRepository(db(), key);
+}
+
+export function createPublishArticleUseCase(): PublishArticleUseCase {
+  return new PublishArticleUseCase(
+    new SqliteArticleRepository(db()),
+    new MediumHttpAdapter(logger),
+    logger,
+  );
+}
+
+export function createMediumAdapter(): MediumHttpAdapter {
+  return new MediumHttpAdapter(logger);
 }
 
 export { closeDatabase as closeDb };

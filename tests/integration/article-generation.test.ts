@@ -34,7 +34,10 @@ function createTestDb(): Database.Database {
     '001_initial.sql',
     '002_research.sql',
     '003_articles.sql',
+    '004_series.sql',
+    '005_import_log.sql',
     '006_vectors_per_provider.sql',
+    '007_medium.sql',
   ];
 
   for (const m of migrations) {
