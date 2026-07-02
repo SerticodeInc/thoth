@@ -1,10 +1,6 @@
 # Thoth
 
-Identity Preserving Publishing Engine — a CLI that builds voice, knowledge, and publication profiles from your writing, then generates articles that sound like you.
-
-> Thoth is the technical proving ground for [Cadence](https://cadence.sh).
-
----
+Identity Preserving Publishing Engine: a CLI that builds voice, knowledge, and publication profiles from your writing, then generates articles that sound like you.
 
 ## Quick Start
 
@@ -22,10 +18,10 @@ thoth generate_profile
 thoth profile_status
 
 # 4. Research a topic
-thoth research "offline-first mobile architecture"
+thoth research "offline first mobile architecture"
 
 # 5. Generate an article in your voice
-thoth generate_article --topic "offline-first mobile architecture"
+thoth generate_article --topic "offline first mobile architecture"
 
 # 6. Export
 thoth export_article <id>
@@ -81,7 +77,7 @@ export OLLAMA_CHAT_MODEL=qwen2.5:7b
 export OLLAMA_EMBEDDING_MODEL=nomic-embed-text
 ```
 
-See `thoth.json` for project-level overrides and the [full config docs](https://thoth.cadence.sh/docs).
+See `thoth.json` for project level overrides and the [full config docs](https://thoth.serticode.com/docs).
 
 ---
 
@@ -112,7 +108,7 @@ Output goes to `~/Documents/Thoth/singles/` and `~/Documents/Thoth/series/`.
 
 ## AI Provider Chain
 
-Thoth chains through AI providers in quality-priority order. Each provider is gated by its API key — if the key isn't set, it's skipped.
+Thoth chains through AI providers in quality priority order. Each provider is gated by its API key; if the key isn't set, it's skipped.
 
 | Provider      | Chat Model           | Embedding Model          | Key Required        |
 | ------------- | -------------------- | ------------------------ | ------------------- |
@@ -122,7 +118,7 @@ Thoth chains through AI providers in quality-priority order. Each provider is ga
 | **Anthropic** | `claude-3-haiku`     | —                        | `ANTHROPIC_API_KEY` |
 | **Ollama**    | `qwen2.5:7b`         | `nomic-embed-text`       | none (local)        |
 
-Each provider has a 15-second timeout. If one fails, the next is tried automatically.
+Each provider has a 15 second timeout. If one fails, the next is tried automatically.
 
 ---
 
@@ -148,6 +144,5 @@ All data stays local. Voice profiles, knowledge profiles, embeddings, research n
 
 ## Links
 
-- [Full CLI Reference](https://thoth.cadence.sh/docs)
-- [Changelog](CHANGELOG.md)
-- [Release Plan](V1_RELEASE.md)
+- [Full CLI Reference](https://thoth.serticode.com/docs)
+- [Changelog](https://github.com/SerticodeInc/thoth/blob/master/CHANGELOG.md)
