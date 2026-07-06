@@ -16,8 +16,7 @@ function createTestDb(): Database.Database {
   const migrations = [
     '001_initial.sql',
     '003_articles.sql',
-    '004_series.sql',
-    '007_medium.sql',
+    '004_series.sql'
   ];
 
   for (const m of migrations) {

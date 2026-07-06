@@ -26,11 +26,12 @@ function defaultOutputDir(type: 'singles' | 'series'): string {
 export function registerExportCommand(program: Command): void {
   program
     .command('export_article')
-    .description('Export an article (--format md|html|txt, --output <path>)')
+    .description('Export an article (--format md|html|txt, --output <path>, --stdout)')
     .argument('<id>', 'Article ID')
     .option('-f, --format <format>', 'Output format (md, html, txt)', 'md')
     .option('-o, --output <path>', 'Output directory', defaultOutputDir('singles'))
-    .action(async (id: string, options: { format: string; output: string }) => {
+    .option('--stdout', 'Print to stdout instead of writing to file', false)
+    .action(async (id: string, options: { format: string; output: string; stdout: boolean }) => {
       await withCliError(logger, 'Export article', async () => {
         if (!VALID_ARTICLE_FORMATS.includes(options.format)) {
           ui.error(`Invalid format. Choose one of: ${VALID_ARTICLE_FORMATS.join(', ')}`);
@@ -49,21 +50,25 @@ export function registerExportCommand(program: Command): void {
           process.exit(1);
         }
 
-        const outDir = resolve(options.output);
-        if (!existsSync(outDir)) {
-          mkdirSync(outDir, { recursive: true });
+        if (options.stdout) {
+          process.stdout.write(result.value.content);
+        } else {
+          const outDir = resolve(options.output);
+          if (!existsSync(outDir)) {
+            mkdirSync(outDir, { recursive: true });
+          }
+
+          const outPath = join(outDir, result.value.filename);
+          writeFileSync(outPath, result.value.content, 'utf-8');
+
+          ui.blank();
+          ui.success('Article exported.');
+          ui.summary({
+            Title: result.value.filename.replace(/\.[^.]+$/, ''),
+            Format: options.format,
+            Path: outPath,
+          });
         }
-
-        const outPath = join(outDir, result.value.filename);
-        writeFileSync(outPath, result.value.content, 'utf-8');
-
-        ui.blank();
-        ui.success('Article exported.');
-        ui.summary({
-          Title: result.value.filename.replace(/\.[^.]+$/, ''),
-          Format: options.format,
-          Path: outPath,
-        });
 
         closeDb();
       });
