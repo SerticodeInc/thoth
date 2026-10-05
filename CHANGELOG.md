@@ -5,6 +5,21 @@ All notable changes to Thoth will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-05
+
+### Added
+
+- Web research via Tavily, page fetching and refined search queries.
+- Research source counts, search query metadata and Markdown research exports.
+- Writing style sanitization for research and article generation.
+- Lint and TypeScript checks before automated npm publishing.
+
+### Fixed
+
+- CI now runs for pushes and pull requests targeting master.
+- CLI version updated to match the package release.
+- Style sanitizer lint error.
+
 ## [1.1.0] - 2026-07-06
 
 ### Removed

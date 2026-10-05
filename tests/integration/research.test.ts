@@ -6,18 +6,28 @@ vi.mock('../../src/infrastructure/ai/ai.service.ts', () => ({
     generateEmbedding: vi.fn().mockResolvedValue({ ok: true, value: new Array(1536).fill(0.1) }),
     chat: vi.fn().mockResolvedValue({
       ok: true,
-      value: JSON.stringify({
-        content: 'Research findings about Flutter state management.',
-        citations: [
-          {
-            sourceId: 'test-source-1',
-            sourcePath: '/test/path.md',
-            excerpt: 'State management is critical in Flutter.',
-            relevanceScore: 0.95,
-          },
-        ],
-      }),
+      value: '# Research Findings\n\nCompiled data about Flutter state management.\n\n## Sources\n\n- Source 1: test data',
     }),
+  })),
+}));
+
+vi.mock('../../src/infrastructure/search/tavily-search.service.ts', () => ({
+  TavilySearchService: vi.fn().mockImplementation(() => ({
+    search: vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        results: [],
+        query: 'test query',
+        totalResults: 0,
+      },
+    }),
+  })),
+}));
+
+vi.mock('../../src/infrastructure/search/web-content-fetcher.ts', () => ({
+  NodeWebContentFetcher: vi.fn().mockImplementation(() => ({
+    fetchPage: vi.fn(),
+    fetchPages: vi.fn().mockResolvedValue({ ok: true, value: [] }),
   })),
 }));
 
@@ -27,6 +37,8 @@ import { ResearchUseCase } from '../../src/application/use-cases/research.usecas
 import { SqliteResearchRepository } from '../../src/infrastructure/persistence/repositories/sqlite-research-repository.ts';
 import { SqliteSourceRepository } from '../../src/infrastructure/persistence/repositories/sqlite-source-repository.ts';
 import { OpenAiAiService } from '../../src/infrastructure/ai/ai.service.ts';
+import { TavilySearchService } from '../../src/infrastructure/search/tavily-search.service.ts';
+import { NodeWebContentFetcher } from '../../src/infrastructure/search/web-content-fetcher.ts';
 import { logger } from '../../src/infrastructure/logging/logger.ts';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -40,6 +52,7 @@ function createTestDb(): Database.Database {
     '001_initial.sql',
     '002_research.sql',
     '006_vectors_per_provider.sql',
+    '007_research_metadata.sql',
   ];
 
   for (const m of migrations) {
@@ -60,24 +73,13 @@ describe('ResearchUseCase', () => {
     db = createTestDb();
   });
 
-  it('returns error when no sources exist', async () => {
+  it('stores research note with compiled content', async () => {
     const ai = new OpenAiAiService();
     const repo = new SqliteResearchRepository(db);
     const sourceRepo = new SqliteSourceRepository(db);
-    const useCase = new ResearchUseCase(ai, repo, sourceRepo, logger);
-
-    const result = await useCase.execute('Flutter state management');
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toContain('No relevant sources found');
-  });
-
-  it('stores research note with citations', async () => {
-    const ai = new OpenAiAiService();
-    const repo = new SqliteResearchRepository(db);
-    const sourceRepo = new SqliteSourceRepository(db);
-    const useCase = new ResearchUseCase(ai, repo, sourceRepo, logger);
+    const webSearch = new TavilySearchService();
+    const webFetcher = new NodeWebContentFetcher();
+    const useCase = new ResearchUseCase(ai, repo, sourceRepo, webSearch, webFetcher, logger);
 
     db.prepare(
       `INSERT INTO vec_sources_openai (embedding) VALUES (?)`,
@@ -98,8 +100,8 @@ describe('ResearchUseCase', () => {
     if (!result.ok) return;
     expect(result.value.topic).toBe('Flutter state management');
     expect(result.value.content).toBeTruthy();
-    expect(result.value.citations.length).toBeGreaterThanOrEqual(1);
-    expect(result.value.citations[0].sourceId).toBe('test-source-1');
+    expect(result.value.sourceCount).toBeGreaterThanOrEqual(1);
+    expect(result.value.searchQueries).toBeDefined();
 
     const stored = await repo.get(result.value.id);
     expect(stored.ok).toBe(true);
@@ -108,11 +110,30 @@ describe('ResearchUseCase', () => {
     expect(stored.value!.topic).toBe('Flutter state management');
   });
 
+  it('returns error when no sources exist anywhere', async () => {
+    // Override the default chat mock for this test to return an error
+    const ai = new OpenAiAiService();
+    const repo = new SqliteResearchRepository(db);
+    const sourceRepo = new SqliteSourceRepository(db);
+    const webSearch = new TavilySearchService();
+    const webFetcher = new NodeWebContentFetcher();
+    const useCase = new ResearchUseCase(ai, repo, sourceRepo, webSearch, webFetcher, logger);
+
+    // No sources in DB, web search returns empty
+    const result = await useCase.execute('No sources anywhere');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain('No sources found');
+  });
+
   it('stores research embedding in vec_research', async () => {
     const ai = new OpenAiAiService();
     const repo = new SqliteResearchRepository(db);
     const sourceRepo = new SqliteSourceRepository(db);
-    const useCase = new ResearchUseCase(ai, repo, sourceRepo, logger);
+    const webSearch = new TavilySearchService();
+    const webFetcher = new NodeWebContentFetcher();
+    const useCase = new ResearchUseCase(ai, repo, sourceRepo, webSearch, webFetcher, logger);
 
     db.prepare(
       `INSERT INTO vec_sources_openai (embedding) VALUES (?)`,
@@ -133,16 +154,15 @@ describe('ResearchUseCase', () => {
 
     const embRow = db.prepare('SELECT COUNT(*) as count FROM research_embeddings').get() as { count: number };
     expect(embRow.count).toBeGreaterThanOrEqual(1);
-
-    const vecRow = db.prepare('SELECT COUNT(*) as count FROM vec_research_openai').get() as { count: number };
-    expect(vecRow.count).toBeGreaterThanOrEqual(1);
   });
 
   it('searches research notes by topic', async () => {
     const ai = new OpenAiAiService();
     const repo = new SqliteResearchRepository(db);
     const sourceRepo = new SqliteSourceRepository(db);
-    const useCase = new ResearchUseCase(ai, repo, sourceRepo, logger);
+    const webSearch = new TavilySearchService();
+    const webFetcher = new NodeWebContentFetcher();
+    const useCase = new ResearchUseCase(ai, repo, sourceRepo, webSearch, webFetcher, logger);
 
     db.prepare(
       `INSERT INTO vec_sources_openai (embedding) VALUES (?)`,

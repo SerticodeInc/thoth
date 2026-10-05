@@ -10,5 +10,7 @@ export interface ResearchNote {
   readonly topic: string;
   readonly content: string;
   readonly citations: readonly ResearchCitation[];
+  readonly sourceCount: number;
+  readonly searchQueries: readonly string[];
   readonly createdAt: Date;
 }

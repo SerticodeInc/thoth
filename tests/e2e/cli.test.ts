@@ -37,7 +37,7 @@ describe('CLI e2e', () => {
 
   it('shows version', () => {
     const output = runCli('--version');
-    expect(output).toContain('1.0.0');
+    expect(output).toContain('1.2.0');
   });
 
   it('runs init successfully', () => {
