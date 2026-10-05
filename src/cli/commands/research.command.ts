@@ -42,13 +42,17 @@ export function registerResearchCommand(program: Command): void {
         ui.blank();
         ui.success('Research complete.');
         ui.meta('Duration', duration);
-        ui.meta('Sources cited', result.value.citations.length);
+        ui.meta('Sources compiled', result.value.sourceCount);
+        ui.meta('Search queries', result.value.searchQueries.length);
         ui.meta('Research ID', result.value.id);
         ui.blank();
 
         ui.section('Citations');
         for (const citation of result.value.citations) {
-          ui.item(`[${citation.sourceId.slice(0, 8)}]`, citation.sourcePath);
+          const displayPath = citation.sourcePath.length > 80
+            ? citation.sourcePath.slice(0, 77) + '...'
+            : citation.sourcePath;
+          ui.item(`[${citation.sourceId.slice(0, 8)}]`, displayPath);
           ui.meta('Relevance', `${(citation.relevanceScore * 100).toFixed(0)}%`);
           ui.empty(`  "${citation.excerpt.slice(0, 120)}..."`);
           ui.blank();

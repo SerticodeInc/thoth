@@ -7,6 +7,7 @@ import type { Article } from '../../domain/entities/article.ts';
 import type { Result } from '../../domain/entities/result.ts';
 import type { LoggerPort } from '../ports/logger.ts';
 import { parseJsonRecord } from './parse-ai-json.ts';
+import { sanitizeText, checkOxfordCommas } from '../services/style-sanitizer.ts';
 
 const ARTICLE_PROMPT = `You are writing an article for a specific author. Your goal is to produce text that sounds exactly like them.
 
@@ -23,12 +24,19 @@ Voice Profile:
 - Reader Engagement: {{readerEngagement}}
 - Summary: {{summary}}
 
-Write a complete article on the given topic using the provided research material. The article should:
+You will receive comprehensive research material. Your job is to rewrite ALL of it into a flowing, engaging article in the author's voice.
 
-1. Match the author's voice exactly — follow every trait above
-2. Be informative and well-structured with a clear introduction, body, and conclusion
-3. Incorporate insights from the research material naturally
- 4. Be between 1600-2500 words — aim for an 8-10 minute read. Go deeper if the topic demands it.
+CRITICAL RULES:
+1. Rewrite EVERY section of the research — do not skip, condense, or truncate
+2. There is NO word limit — write as much as the research material demands
+3. Transform raw compiled data into compelling prose the author would write
+4. Preserve all key facts, data points, statistics and insights from the research
+5. Match the author's voice EXACTLY — follow every trait above
+6. Structure: compelling introduction, thematic body sections, strong conclusion
+
+STYLE RULES:
+- NEVER use em dashes (—). Use commas, periods, or semicolons instead
+- NEVER use Oxford commas (no comma before "and" or "or" in a list)
 
 Return ONLY valid JSON with this exact structure:
 {
@@ -94,6 +102,7 @@ export class GenerateArticleUseCase {
       userPrompt: userMessage,
       responseFormat: 'json',
       temperature: 0.7,
+      maxTokens: 8192,
     });
 
     if (!chatResult.ok) return { ok: false, error: chatResult.error };
@@ -106,7 +115,14 @@ export class GenerateArticleUseCase {
     }
 
     const title: string = parsed.value.title;
-    const content: string = parsed.value.content;
+    let content: string = parsed.value.content;
+
+    // Post-process for style rules
+    content = sanitizeText(content);
+    const oxfordWarnings = checkOxfordCommas(content);
+    if (oxfordWarnings.length > 0) {
+      this.logger.warn({ count: oxfordWarnings.length }, 'Potential Oxford commas detected in article');
+    }
     const wordCount = content.split(/\s+/).length;
 
     const article: Article = {

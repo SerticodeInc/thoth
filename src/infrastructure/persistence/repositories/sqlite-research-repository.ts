@@ -10,11 +10,15 @@ const researchNoteRowSchema = z.object({
   content: z.string(),
   citations: z.string(),
   created_at: z.string(),
+  source_count: z.number().optional().default(0),
+  search_queries: z.string().optional().default('[]'),
 }).transform((row) => ({
   id: row.id,
   topic: row.topic,
   content: row.content,
   citations: JSON.parse(row.citations) as ResearchCitation[],
+  sourceCount: row.source_count,
+  searchQueries: JSON.parse(row.search_queries) as string[],
   createdAt: new Date(row.created_at),
 }));
 
@@ -31,18 +35,22 @@ export class SqliteResearchRepository implements ResearchRepository {
   save(note: ResearchNote): Promise<Result<ResearchNote>> {
     this.db
       .prepare(
-        `INSERT INTO research_notes (id, topic, content, citations, created_at)
-         VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO research_notes (id, topic, content, citations, source_count, search_queries, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            topic = excluded.topic,
            content = excluded.content,
-           citations = excluded.citations`,
+           citations = excluded.citations,
+           source_count = excluded.source_count,
+           search_queries = excluded.search_queries`,
       )
       .run(
         note.id,
         note.topic,
         note.content,
         JSON.stringify(note.citations),
+        note.sourceCount,
+        JSON.stringify(note.searchQueries),
         note.createdAt.toISOString(),
       );
     return Promise.resolve({ ok: true, value: note });

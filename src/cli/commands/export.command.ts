@@ -7,6 +7,7 @@ import { loadConfig } from '../../infrastructure/config/config-loader.ts';
 import {
   createExportArticleUseCase,
   createExportSeriesUseCase,
+  createExportResearchUseCase,
   closeDb,
 } from '../../infrastructure/composition-root.ts';
 import type { ExportFormat } from '../../application/use-cases/export-article.usecase.ts';
@@ -66,6 +67,47 @@ export function registerExportCommand(program: Command): void {
           ui.summary({
             Title: result.value.filename.replace(/\.[^.]+$/, ''),
             Format: options.format,
+            Path: outPath,
+          });
+        }
+
+        closeDb();
+      });
+    });
+
+  program
+    .command('export_research')
+    .description('Export a research note (--output <path>, --stdout)')
+    .argument('<id>', 'Research note ID')
+    .option('-o, --output <path>', 'Output directory', defaultOutputDir('singles'))
+    .option('--stdout', 'Print to stdout instead of writing to file', false)
+    .action(async (id: string, options: { output: string; stdout: boolean }) => {
+      await withCliError(logger, 'Export research', async () => {
+        const useCase = createExportResearchUseCase();
+
+        const result = await useCase.execute({ researchId: id });
+
+        if (!result.ok) {
+          ui.error(`Export failed: ${result.error}`);
+          process.exit(1);
+        }
+
+        if (options.stdout) {
+          process.stdout.write(result.value.content);
+        } else {
+          const outDir = resolve(options.output);
+          if (!existsSync(outDir)) {
+            mkdirSync(outDir, { recursive: true });
+          }
+
+          const outPath = join(outDir, result.value.filename);
+          writeFileSync(outPath, result.value.content, 'utf-8');
+
+          ui.blank();
+          ui.success('Research exported.');
+          ui.summary({
+            Topic: result.value.filename.replace(/\.md$/, ''),
+            Format: 'md',
             Path: outPath,
           });
         }

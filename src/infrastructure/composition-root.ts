@@ -2,6 +2,8 @@ import { getDatabase } from './persistence/database.ts';
 import { closeDatabase } from './persistence/database.ts';
 import { OpenAiAiService } from './ai/ai.service.ts';
 import { getActiveEmbeddingProviderKey } from './ai/provider.ts';
+import { TavilySearchService } from './search/tavily-search.service.ts';
+import { NodeWebContentFetcher } from './search/web-content-fetcher.ts';
 import { logger } from './logging/logger.ts';
 import { FileSourceAdapter } from './adapters/file-source.adapter.ts';
 
@@ -11,6 +13,7 @@ import { GenerateProfilesUseCase } from '../application/use-cases/generate-profi
 import { ImportSourcesUseCase } from '../application/use-cases/import-sources.usecase.ts';
 import { ExportArticleUseCase } from '../application/use-cases/export-article.usecase.ts';
 import { ExportSeriesUseCase } from '../application/use-cases/export-series.usecase.ts';
+import { ExportResearchUseCase } from '../application/use-cases/export-research.usecase.ts';
 import { SeriesUseCase } from '../application/use-cases/series.usecase.ts';
 
 import { SqliteResearchRepository } from './persistence/repositories/sqlite-research-repository.ts';
@@ -31,12 +34,22 @@ function ai() {
   return new OpenAiAiService();
 }
 
+function webSearch() {
+  return new TavilySearchService();
+}
+
+function webFetcher() {
+  return new NodeWebContentFetcher();
+}
+
 export function createResearchUseCase() {
   const key = providerKey();
   return new ResearchUseCase(
     ai(),
     new SqliteResearchRepository(db(), key),
     new SqliteSourceRepository(db(), key),
+    webSearch(),
+    webFetcher(),
     logger,
   );
 }
@@ -80,6 +93,10 @@ export function createExportSeriesUseCase() {
     new SqliteSeriesRepository(db()),
     new SqliteArticleRepository(db()),
   );
+}
+
+export function createExportResearchUseCase() {
+  return new ExportResearchUseCase(new SqliteResearchRepository(db()));
 }
 
 export function createSeriesUseCase() {
