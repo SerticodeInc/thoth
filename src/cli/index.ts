@@ -24,7 +24,7 @@ export function createCli(): Command {
   program
     .name('thoth')
     .description('Identity Preserving Publishing Engine')
-    .version('1.0.0')
+    .version('1.2.0')
     .option('--local', 'Use only local AI (Ollama). No data sent to external providers')
     .option('--provider <name>', 'AI provider to use (openai, groq, gemini, anthropic, ollama)');
 

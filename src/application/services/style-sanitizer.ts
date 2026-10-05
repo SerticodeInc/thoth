@@ -4,7 +4,7 @@
  * - Logs warnings for potential Oxford comma usage (best-effort detection)
  */
 export function sanitizeText(text: string): string {
-  let sanitized = text
+  const sanitized = text
     // Replace em dash unicode character
     .replace(/—/g, ', ')
     // Replace en dash unicode character
